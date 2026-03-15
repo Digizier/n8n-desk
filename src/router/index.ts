@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from '@ionic/vue-router'
 import type { RouteRecordRaw } from 'vue-router'
-import TabsLayout from '@/views/TabsLayout.vue'
+import MenuLayout from '@/views/MenuLayout.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -9,7 +9,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/',
-    component: TabsLayout,
+    component: MenuLayout,
     children: [
       {
         path: 'chat',
@@ -32,6 +32,10 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/onboarding',
     component: () => import('@/views/OnboardingView.vue'),
+  },
+  {
+    path: '/showcase',
+    component: () => import('@/views/ComponentShowcaseView.vue'),
   },
 ]
 

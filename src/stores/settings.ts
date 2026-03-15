@@ -1,7 +1,8 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { ThemeMode, AppMode, AppSettings } from '@/types/settings'
+import type { ThemeMode, AppMode, AppSettings, SupportedLocale } from '@/types/settings'
 import { localStorageService } from '@/services/local-storage'
+import { setAppLocale } from '@/i18n'
 
 const CONFIG_PATH = 'config.json'
 
@@ -9,12 +10,14 @@ const DEFAULTS: AppSettings = {
   theme: 'system',
   defaultInstanceId: null,
   lastMode: 'chat',
+  locale: 'en',
 }
 
 export const useSettingsStore = defineStore('settings', () => {
   const theme = ref<ThemeMode>(DEFAULTS.theme)
   const defaultInstanceId = ref<string | null>(DEFAULTS.defaultInstanceId)
   const lastMode = ref<AppMode>(DEFAULTS.lastMode)
+  const locale = ref<SupportedLocale>(DEFAULTS.locale)
 
   async function hydrate(): Promise<void> {
     const saved = await localStorageService.readJson<AppSettings>(CONFIG_PATH)
@@ -22,6 +25,8 @@ export const useSettingsStore = defineStore('settings', () => {
       theme.value = saved.theme ?? DEFAULTS.theme
       defaultInstanceId.value = saved.defaultInstanceId ?? DEFAULTS.defaultInstanceId
       lastMode.value = saved.lastMode ?? DEFAULTS.lastMode
+      locale.value = saved.locale ?? DEFAULTS.locale
+      setAppLocale(locale.value)
     }
   }
 
@@ -30,6 +35,7 @@ export const useSettingsStore = defineStore('settings', () => {
       theme: theme.value,
       defaultInstanceId: defaultInstanceId.value,
       lastMode: lastMode.value,
+      locale: locale.value,
     }
     await localStorageService.writeJson(CONFIG_PATH, data)
   }
@@ -44,13 +50,21 @@ export const useSettingsStore = defineStore('settings', () => {
     void save()
   }
 
+  function setLocale(newLocale: SupportedLocale): void {
+    locale.value = newLocale
+    setAppLocale(newLocale)
+    void save()
+  }
+
   return {
     theme,
     defaultInstanceId,
     lastMode,
+    locale,
     hydrate,
     save,
     setTheme,
     setLastMode,
+    setLocale,
   }
 })

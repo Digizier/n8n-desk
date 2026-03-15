@@ -4,6 +4,15 @@ export interface AgentEvent {
   data: unknown
 }
 
+export interface AgentMeta {
+  id: string
+  name: string
+  description: string
+  avatarColor: string
+  avatarInitial: string
+  pinned: boolean
+}
+
 export interface AgentToolCall {
   id: string
   name: string

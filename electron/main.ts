@@ -30,7 +30,20 @@ function createWindow() {
   // In dev, load from Vite dev server; in prod, load built files
   const isDev = !app.isPackaged
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173')
+    const devUrl = 'http://localhost:5173'
+    const loadDevServer = async () => {
+      for (let i = 0; i < 30; i++) {
+        try {
+          await mainWindow!.loadURL(devUrl)
+          return
+        } catch {
+          await new Promise((r) => setTimeout(r, 1000))
+        }
+      }
+      console.error('Failed to connect to Vite dev server at', devUrl)
+      app.quit()
+    }
+    loadDevServer()
     mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))

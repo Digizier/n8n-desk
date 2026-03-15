@@ -755,10 +755,57 @@ User action → Pinia store updates → local-storage.ts appends/writes to disk
 
 ## Theming
 
-1. **Copy n8n design tokens** from `n8n-master/packages/frontend/@n8n/design-system/src/css/` → `src/theme/n8n-tokens.scss`
-2. **Map to Ionic CSS variables** in `src/theme/variables.scss` (e.g., `--ion-color-primary: var(--color--primary)`)
-3. **Dark mode**: use `[data-theme="dark"]` from n8n tokens, sync with `prefers-color-scheme` and Ionic's dark mode class
-4. **`<n8n-demo>` theming**: pass `theme="dark"` or `theme="light"` to match app theme
+### Token Architecture
+
+n8n's design system has three layers of color tokens. n8n-desk adds a fourth app-specific layer:
+
+1. **Primitives** (`_primitives.scss`) — raw color palette: `--color--neutral-950` through `--color--neutral-50`, orange, green, etc.
+2. **Semantic tokens** (`_tokens.scss`) — generic mappings: `--color--foreground`, `--color--background`, `--color--text`
+3. **App-specific tokens** (`_tokens.scss`) — n8n UI chrome: `--menu--color--background`, `--canvas--color--background`
+4. **n8n-desk surface tokens** (`global.scss`) — our Ionic-compatible layer: `--n8n-desk--sidebar-bg`, `--n8n-desk--content-bg`, etc.
+
+### Why `--n8n-desk--` Tokens Exist
+
+The generic semantic tokens (`--color--foreground`, `--color--background`) are **too light for dark mode**. They map to neutral-800 (24%) and neutral-700 (30%), but n8n 2.0's actual dark UI uses the deeper end: neutral-900 (13%) for sidebar, neutral-950 (9%) for canvas. The `--n8n-desk--` tokens bridge this gap.
+
+### Surface Token Reference
+
+| Token | Dark mode value | Light mode value | Use for |
+|---|---|---|---|
+| `--n8n-desk--sidebar-bg` | `neutral-900` (13%) | `foreground--tint-2` (white) | Side menu background |
+| `--n8n-desk--content-bg` | `neutral-950` (9%) | `background` (96%) | Main content area, segment track |
+| `--n8n-desk--surface-bg` | `neutral-850` (17%) | `foreground` (88%) | Cards, lists, inputs, overlays |
+| `--n8n-desk--surface-raised-bg` | `neutral-800` (24%) | `foreground--tint-2` (white) | Hover states, toggles, skeleton |
+
+**Always use `--n8n-desk--` tokens for component surfaces.** Do not use `--color--foreground` or `--color--background` directly — they produce incorrect contrast in dark mode.
+
+### Theme File Structure
+
+```
+src/theme/
+├── _primitives.scss     # Raw color palette (copied from n8n)
+├── _tokens.scss         # Semantic + app tokens with light/dark mixins (copied from n8n)
+├── global.scss          # ionic-theme-bridge mixin, --n8n-desk-- tokens, Ionic component overrides
+└── variables.scss       # Deprecated — consolidated into global.scss
+```
+
+### How Themes Are Applied
+
+```scss
+// global.scss structure:
+:root            { @include primitives; }           // raw colors always available
+body[data-theme='light'] { @include theme; @include ionic-theme-bridge; }
+body[data-theme='dark']  { @include theme-dark; @include ionic-theme-bridge; + dark overrides }
+body:not([data-theme])   { light fallback + @media dark fallback }
+```
+
+The `ionic-theme-bridge` mixin maps n8n semantic tokens → Ionic CSS variables (`--ion-color-primary`, `--ion-background-color`, etc.). It must be applied **after** the theme mixin so tokens are defined.
+
+### Dark Mode
+
+- Controlled via `body[data-theme="dark"]` attribute (set by `useTheme` composable)
+- Syncs with `prefers-color-scheme` when theme is set to `"system"`
+- `<n8n-demo>` web component: pass `theme="dark"` or `theme="light"` to match
 
 ---
 
@@ -789,14 +836,42 @@ Use in Workflow mode to render workflow previews inline. Always set:
 
 ## n8n-master Reference
 
-The `n8n-master/` directory contains the full n8n monorepo. It is **gitignored** and **read-only** — never modify it. Use it to:
+The `n8n-master/` directory contains the full n8n monorepo. It is **gitignored** and **read-only** — never modify it.
 
-- Copy design tokens from `packages/frontend/@n8n/design-system/src/css/`
-- Reference AskAssistant chat components at `packages/frontend/@n8n/design-system/src/components/AskAssistant*/`
-- Look up Chat-Hub API types at `packages/@n8n/api-types/src/chat-hub.ts`
-- Look up push event types at `packages/@n8n/api-types/src/push/chat-hub.ts`
-- Understand OAuth flow at `packages/cli/src/modules/mcp/`
-- Reference Chat-Hub backend at `packages/cli/src/modules/chat-hub/`
+### Package Map
+
+| Package | Path | What to find there |
+|---|---|---|
+| **Design System** | `packages/frontend/@n8n/design-system/` | 84+ Vue 3 components, CSS tokens, SCSS themes, utilities, directives |
+| ↳ Components | `…/design-system/src/components/` | `AskAssistant*` (chat UI), `N8nMarkdown`, `N8nButton`, `N8nCallout`, `N8nCard`, `N8nInput`, `N8nSelect`, `N8nSpinner`, `N8nBadge`, `N8nTag`, `N8nCommandBar`, `N8nScrollArea`, `N8nPromptInput`, `N8nSendStopButton`, `BlinkingCursor`, etc. |
+| ↳ V2 Components | `…/design-system/src/v2/components/` | Modern reka-ui based: `Badge`, `Checkbox`, `DropdownMenu`, `Select`, `Switch`, `Loading`, `Pagination`, `Tree` |
+| ↳ CSS Tokens | `…/design-system/src/css/` | `_primitives.scss` (raw palette), `_tokens.scss` (semantic + dark mode), `fonts.scss` |
+| ↳ Utils | `…/design-system/src/utils/` | `cn.ts` (class merge), `markdown.ts` (MD→HTML), `uid.ts` (unique IDs), `colorUtils.ts` |
+| ↳ Directives | `…/design-system/src/directives/` | `n8n-html.ts` (XSS-safe HTML), `n8n-truncate.ts`, `n8n-smart-decimal.ts` |
+| ↳ Composables | `…/design-system/src/composables/` | `useI18n`, `useCharacterLimit`, `useParentScroll` |
+| **@n8n/chat** | `packages/frontend/@n8n/chat/` | Embeddable chat widget — `Chat.vue`, `Message.vue`, `MessagesList.vue`, `Input.vue`, `MarkdownRenderer.vue`, `MessageActions.vue` |
+| **Editor UI** | `packages/frontend/editor-ui/` | Full n8n editor — `src/app/` (views), `src/features/` (feature modules) |
+| **API Types** | `packages/@n8n/api-types/` | `chat-hub.ts` (Chat-Hub API types), `push/` (WebSocket event types), `dto/` (request/response DTOs) |
+| **Chat-Hub** | `packages/@n8n/chat-hub/` | `parser.ts` (message parsing), `artifact.ts` (artifact collection), `constants.ts` |
+| **Client OAuth2** | `packages/@n8n/client-oauth2/` | OAuth2 client implementation — `code-flow.ts`, `credentials-flow.ts`, types |
+| **Permissions** | `packages/@n8n/permissions/` | Role & scope definitions, permission checks |
+| **Constants** | `packages/@n8n/constants/` | Shared constants across n8n packages |
+| **Workflow SDK** | `packages/@n8n/workflow-sdk/` | SDK for building workflows programmatically |
+| **CLI / Backend** | `packages/cli/` | n8n server — `src/modules/mcp/` (OAuth + MCP server), `src/modules/chat-hub/` (Chat-Hub backend) |
+| **Core** | `packages/core/` | Workflow execution engine, node execution |
+| **Workflow** | `packages/workflow/` | Workflow data model, expression evaluation |
+| **Nodes Base** | `packages/nodes-base/` | All built-in n8n node implementations |
+| **Nodes LangChain** | `packages/@n8n/nodes-langchain/` | AI/LangChain node implementations |
+
+### Most relevant for n8n-desk
+
+- **Design tokens & theming** → `design-system/src/css/`
+- **Chat UI components** → `design-system/src/components/AskAssistant*/` + `@n8n/chat/src/components/`
+- **Chat-Hub API types** → `@n8n/api-types/src/chat-hub.ts` + `push/chat-hub.ts`
+- **Chat-Hub parsing** → `@n8n/chat-hub/src/parser.ts` + `artifact.ts`
+- **OAuth flow** → `cli/src/modules/mcp/` + `@n8n/client-oauth2/`
+- **Markdown rendering** → `design-system/src/utils/markdown.ts`
+- **HTML sanitization** → `design-system/src/directives/n8n-html.ts`
 
 ---
 
@@ -834,6 +909,16 @@ npm run build:electron
 npx cap sync
 npx cap open ios    # or android
 ```
+
+---
+
+## Rules
+
+- **Check n8n source before creating new components.** Before building any new component, composable, utility, or type — search `n8n-master/` first. n8n likely already has a solution (component, util, type, directive) that can be copied or adapted. Use the package map above to find the right location. Copy what you need into `src/`, never import from `n8n-master/` at build time.
+- **`<ion-segment>` must always use `mode="ios"`** — gives the pill-style switcher on all platforms.
+- **Do NOT set `mode: 'ios'` globally on `IonicVue`.** Only apply `mode="ios"` on individual components where explicitly required.
+- **Navigation is side menu, never bottom tabs.** Use `IonMenu` + `IonSplitPane` + `IonSegment` for mode switching. No `IonTabs` or `IonTabBar`.
+- **Inputs always use `fill="outline"` and `label-placement="stacked"`** — label above, outlined border. This matches n8n's form style. Applies to `<ion-input>`, `<ion-textarea>`, and `<ion-select>`.
 
 ---
 

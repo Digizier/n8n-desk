@@ -5,7 +5,15 @@
 :root {
   @include primitives;
 
-  // Map n8n design tokens to Ionic CSS variables
+  // Static Ionic variables (not theme-dependent)
+  --ion-font-family: 'InterVariable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    Helvetica, Arial, sans-serif;
+  --ion-item-background: transparent;
+}
+
+// Mixin: map n8n semantic tokens → Ionic CSS variables.
+// Must be applied AFTER the theme mixin so semantic tokens are available.
+@mixin ionic-theme-bridge {
   --ion-color-primary: var(--color--primary);
   --ion-color-primary-shade: var(--color--primary--shade-1);
   --ion-color-primary-tint: var(--color--primary--tint-1);
@@ -20,24 +28,99 @@
   --ion-color-danger-tint: var(--color--danger--tint-1);
   --ion-background-color: var(--color--background);
   --ion-text-color: var(--color--text);
-  --ion-font-family: 'InterVariable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    Helvetica, Arial, sans-serif;
   --ion-toolbar-background: var(--color--foreground);
   --ion-toolbar-color: var(--color--text--shade-1);
-  --ion-tab-bar-background: var(--color--foreground);
-  --ion-tab-bar-color: var(--color--text--tint-1);
-  --ion-tab-bar-color-selected: var(--color--primary);
-  --ion-item-background: transparent;
+  --ion-split-pane-border: 1px solid var(--border-color--subtle);
 }
 
 body[data-theme='light'] {
   @include theme;
+  @include ionic-theme-bridge;
   color-scheme: light;
 }
 
 body[data-theme='dark'] {
   @include theme-dark;
+  @include ionic-theme-bridge;
   color-scheme: dark;
+
+  // n8n 2.0 dark UI uses deeper neutrals than the generic semantic tokens.
+  // Match the actual n8n app: sidebar=neutral-900, content=neutral-950, surfaces=neutral-850.
+  --ion-background-color: var(--color--neutral-950);
+  --ion-toolbar-background: var(--color--neutral-900);
+
+  // App-level dark overrides for n8n-desk surfaces
+  --n8n-desk--sidebar-bg: var(--color--neutral-900);
+  --n8n-desk--content-bg: var(--color--neutral-950);
+  --n8n-desk--surface-bg: var(--color--neutral-850);
+  --n8n-desk--surface-raised-bg: var(--color--neutral-800);
+  --n8n-desk--grid-line-color: rgba(255, 255, 255, 0.05);
+  --n8n-desk--grid-dot-color: rgba(255, 255, 255, 0.1);
+
+  // n8n dark tokens use muted colors for text readability, but Ionic uses
+  // these as button/chip fill colors where vibrancy matters more.
+  --ion-color-success: var(--color--green-500);
+  --ion-color-success-shade: var(--color--green-600);
+  --ion-color-success-tint: var(--color--green-400);
+  --ion-color-warning: var(--color--gold-500);
+  --ion-color-warning-shade: var(--color--gold-600);
+  --ion-color-warning-tint: var(--color--gold-400);
+  --ion-color-danger: var(--color--red-600);
+  --ion-color-danger-shade: var(--color--red-700);
+  --ion-color-danger-tint: var(--color--red-500);
+}
+
+// Fallback: if data-theme hasn't been set yet, apply light as default
+// and respect system dark preference
+body:not([data-theme]) {
+  @include theme;
+  @include ionic-theme-bridge;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not([data-theme]) {
+    @include theme-dark;
+    @include ionic-theme-bridge;
+    color-scheme: dark;
+
+    --ion-background-color: var(--color--neutral-950);
+    --ion-toolbar-background: var(--color--neutral-900);
+    --n8n-desk--sidebar-bg: var(--color--neutral-900);
+    --n8n-desk--content-bg: var(--color--neutral-950);
+    --n8n-desk--surface-bg: var(--color--neutral-850);
+    --n8n-desk--surface-raised-bg: var(--color--neutral-800);
+    --n8n-desk--grid-line-color: rgba(255, 255, 255, 0.05);
+    --n8n-desk--grid-dot-color: rgba(255, 255, 255, 0.1);
+
+    --ion-color-success: var(--color--green-500);
+    --ion-color-success-shade: var(--color--green-600);
+    --ion-color-success-tint: var(--color--green-400);
+    --ion-color-warning: var(--color--gold-500);
+    --ion-color-warning-shade: var(--color--gold-600);
+    --ion-color-warning-tint: var(--color--gold-400);
+    --ion-color-danger: var(--color--red-600);
+    --ion-color-danger-shade: var(--color--red-700);
+    --ion-color-danger-tint: var(--color--red-500);
+  }
+}
+
+// Light mode surface tokens (use existing semantic tokens)
+body[data-theme='light'],
+body:not([data-theme]) {
+  --n8n-desk--sidebar-bg: var(--color--foreground--tint-2);
+  --n8n-desk--content-bg: var(--color--background);
+  --n8n-desk--surface-bg: var(--color--foreground);
+  --n8n-desk--surface-raised-bg: var(--color--foreground--tint-2);
+  --n8n-desk--grid-line-color: rgba(0, 0, 0, 0.06);
+  --n8n-desk--grid-dot-color: rgba(0, 0, 0, 0.12);
+}
+
+// Electron: set safe area for macOS hiddenInset title bar.
+// This makes ion-header toolbars and ion-content automatically add
+// top padding for the traffic lights.
+body.electron-app {
+  --ion-safe-area-top: 40px;
 }
 
 // Ionic core CSS
@@ -52,4 +135,289 @@ body[data-theme='dark'] {
 // App-level global styles
 body {
   font-family: var(--ion-font-family);
+}
+
+// ==========================================================================
+// Ionic component overrides — n8n design token integration
+// All values reference semantic tokens that auto-switch in light/dark mode.
+// ==========================================================================
+
+// --- Toolbar ---
+ion-toolbar {
+  --border-color: var(--border-color--subtle);
+}
+
+// --- Buttons ---
+ion-button {
+  --border-radius: var(--radius--xs);
+  font-weight: var(--font-weight--medium);
+  font-size: var(--font-size--sm);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+// --- Cards ---
+ion-card {
+  --background: var(--n8n-desk--surface-bg);
+  --color: var(--color--text);
+  border: 1px solid var(--border-color--subtle);
+  border-radius: var(--radius--sm);
+  box-shadow: var(--shadow--light);
+}
+
+ion-card-title {
+  color: var(--color--text--shade-1);
+  font-weight: var(--font-weight--bold);
+  font-size: var(--font-size--lg);
+}
+
+ion-card-subtitle {
+  color: var(--color--text--tint-1);
+  font-size: var(--font-size--2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+// --- Lists & Items ---
+ion-list[inset] {
+  border-radius: var(--radius--sm);
+  background: var(--n8n-desk--surface-bg);
+  border: 1px solid var(--border-color--subtle);
+}
+
+ion-item {
+  --border-color: var(--border-color--subtle);
+  --color: var(--color--text);
+  font-size: var(--font-size--sm);
+}
+
+ion-list-header {
+  color: var(--color--text--tint-1);
+  font-weight: var(--font-weight--bold);
+  font-size: var(--font-size--2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: var(--spacing--sm);
+}
+
+// --- Chips & Badges ---
+ion-chip {
+  --background: var(--n8n-desk--surface-bg);
+  --color: var(--color--text);
+  border: 1px solid var(--border-color--subtle);
+  font-size: var(--font-size--sm);
+  border-radius: var(--radius--full);
+}
+
+ion-badge {
+  font-size: var(--font-size--2xs);
+  font-weight: var(--font-weight--medium);
+  border-radius: var(--radius--full);
+}
+
+// --- Form Controls ---
+// Inputs always use outline fill + stacked label (n8n style).
+ion-input,
+ion-textarea {
+  --background: var(--n8n-desk--surface-bg);
+  --color: var(--color--text);
+  --placeholder-color: var(--color--text--tint-1);
+  --border-color: var(--border-color--strong);
+  --border-radius: var(--radius--2xs);
+  --highlight-color-focused: var(--color--primary);
+}
+
+ion-searchbar {
+  --background: var(--n8n-desk--surface-bg);
+  --border-radius: var(--radius--xs);
+  --color: var(--color--text);
+  --placeholder-color: var(--color--text--tint-1);
+  --icon-color: var(--color--text--tint-1);
+}
+
+ion-select {
+  color: var(--color--text);
+}
+
+// --- Toggles, Checkboxes, Radio ---
+ion-toggle {
+  --track-background: var(--n8n-desk--surface-raised-bg);
+  --track-background-checked: var(--color--primary);
+  --handle-background-checked: var(--color--neutral-white);
+}
+
+ion-checkbox {
+  --border-color: var(--border-color--strong);
+  --checkbox-background-checked: var(--color--primary);
+  --border-color-checked: var(--color--primary);
+  --checkmark-color: var(--color--neutral-white);
+}
+
+ion-radio {
+  --color-checked: var(--color--primary);
+}
+
+// --- Range ---
+ion-range {
+  --bar-background: var(--n8n-desk--surface-raised-bg);
+  --bar-background-active: var(--color--primary);
+  --knob-background: var(--color--primary);
+  --pin-background: var(--color--primary);
+  --pin-color: var(--color--neutral-white);
+}
+
+// --- Segment ---
+ion-segment {
+  --background: var(--n8n-desk--surface-bg);
+  border-radius: var(--radius--xs);
+  padding: 3px;
+}
+
+ion-segment-button {
+  --indicator-color: var(--n8n-desk--surface-raised-bg);
+  --indicator-box-shadow: none;
+  --color: var(--color--text--tint-1);
+  --color-checked: var(--color--text--shade-1);
+  --border-radius: var(--radius--2xs);
+  --margin-top: 0;
+  --margin-bottom: 0;
+  --margin-start: 0;
+  --margin-end: 0;
+  min-height: 28px;
+  font-weight: var(--font-weight--medium);
+  font-size: var(--font-size--sm);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+// --- Progress & Spinners ---
+ion-progress-bar {
+  --background: var(--n8n-desk--surface-bg);
+  --progress-background: var(--color--primary);
+  border-radius: var(--radius--full);
+  overflow: hidden;
+}
+
+ion-spinner {
+  color: var(--color--primary);
+}
+
+// --- Skeleton ---
+ion-skeleton-text {
+  --background: var(--n8n-desk--surface-raised-bg);
+  border-radius: var(--radius--3xs);
+}
+
+// --- Accordion ---
+ion-accordion-group {
+  border-radius: var(--radius--sm);
+  overflow: hidden;
+  border: 1px solid var(--border-color--subtle);
+}
+
+// --- FAB ---
+ion-fab-button {
+  --background: var(--color--primary);
+  --color: var(--color--neutral-white);
+  --box-shadow: var(--shadow--dark);
+}
+
+// ==========================================================================
+// Overlay components — rendered outside component tree at ion-app root.
+// These need global selectors since they're not inside any view's shadow DOM.
+// ==========================================================================
+
+// --- Alert ---
+ion-alert {
+  --backdrop-opacity: 0.5;
+
+  .alert-wrapper {
+    background: var(--n8n-desk--surface-bg) !important;
+    border-radius: var(--radius--sm) !important;
+    border: 1px solid var(--border-color--subtle);
+    box-shadow: var(--shadow--dark);
+  }
+
+  .alert-head {
+    padding: var(--spacing--sm) var(--spacing--sm) var(--spacing--3xs);
+  }
+
+  .alert-title {
+    color: var(--color--text--shade-1) !important;
+    font-weight: var(--font-weight--bold);
+    font-size: var(--font-size--md);
+  }
+
+  .alert-sub-title {
+    color: var(--color--text--tint-1) !important;
+    font-size: var(--font-size--sm);
+  }
+
+  .alert-message {
+    color: var(--color--text) !important;
+    font-size: var(--font-size--sm);
+    padding: var(--spacing--3xs) var(--spacing--sm) var(--spacing--sm);
+  }
+
+  .alert-button-group {
+    padding: var(--spacing--3xs) var(--spacing--2xs);
+  }
+
+  .alert-button {
+    color: var(--color--primary) !important;
+    font-weight: var(--font-weight--medium);
+    border-radius: var(--radius--xs) !important;
+  }
+}
+
+// --- Toast ---
+ion-toast {
+  --background: var(--n8n-desk--surface-bg);
+  --color: var(--color--text--shade-1);
+  --border-radius: var(--radius--xs);
+  --box-shadow: var(--shadow--dark);
+  --button-color: var(--color--primary);
+
+  &::part(container) {
+    border: 1px solid var(--border-color--subtle);
+  }
+}
+
+// --- Action Sheet ---
+ion-action-sheet {
+  --backdrop-opacity: 0.5;
+
+  .action-sheet-group {
+    background: var(--n8n-desk--surface-bg) !important;
+    border-radius: var(--radius--sm) !important;
+    border: 1px solid var(--border-color--subtle);
+  }
+
+  .action-sheet-title {
+    color: var(--color--text--tint-1) !important;
+    font-size: var(--font-size--2xs);
+    font-weight: var(--font-weight--bold);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .action-sheet-button {
+    color: var(--color--text--shade-1) !important;
+    font-size: var(--font-size--sm);
+    font-weight: var(--font-weight--medium);
+
+    &.action-sheet-destructive {
+      color: var(--color--danger) !important;
+    }
+
+    &.action-sheet-cancel {
+      font-weight: var(--font-weight--bold);
+    }
+  }
+}
+
+// --- Note ---
+ion-note {
+  color: var(--color--text--tint-1);
+  font-size: var(--font-size--2xs);
 }

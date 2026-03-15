@@ -33,6 +33,13 @@ The entire CSS variable system gives us n8n's color palette, spacing scale, typo
 - `design-system/src/css/_tokens.scss` — semantic tokens with backwards compatibility
 - `design-system/src/css/fonts.scss` — typography (InterVariable)
 
+**Important — Dark mode surface colors:** n8n's generic semantic tokens (`--color--foreground`, `--color--background`) are too light for the n8n 2.0 dark UI. The actual n8n app uses deeper neutrals for its chrome:
+- Sidebar: `--color--neutral-900` (13% lightness) via `--menu--color--background`
+- Canvas/content: `--color--neutral-950` (9% lightness) via `--canvas--color--background`
+- Surfaces: `--color--neutral-850` (17% lightness)
+
+n8n-desk defines `--n8n-desk--` surface tokens in `global.scss` that map to these correct values per theme. Always use these for component backgrounds instead of the generic semantic tokens. See the Theming section in `CLAUDE.md` for the full reference table.
+
 ### 2. Chat-Specific Components (AskAssistant Family)
 
 n8n already has a full chat/assistant UI component family — this is the most directly relevant code for n8n-desk:
@@ -112,14 +119,24 @@ n8n-desk needs settings screens for API keys, n8n instance URL, LLM provider sel
 
 ### 8. Navigation Patterns
 
-| Component | Inspiration For |
-|---|---|
-| `N8nTabs` | Switching between Workflow Agents |
-| `N8nCommandBar` | Quick workflow/agent search |
-| `N8nActionDropdown` | Context menus on conversations |
-| `N8nBreadcrumbs` | Navigation hierarchy |
+n8n-desk uses a **side menu** layout — never a bottom tab bar.
 
-**Note:** Ionic's adaptive nav (tabs on mobile, sidebar on desktop) fits n8n-desk's cross-platform needs better. Use these for interaction design reference.
+| Component | Implementation |
+|---|---|
+| `IonMenu` + `IonSplitPane` | Primary navigation — persistent sidebar on desktop (≥992px), swipe/hamburger drawer on mobile |
+| `IonSegment` | Mode switcher in the main header toolbar (Chat / Cowork / Workflow) — replaces tab navigation |
+| `N8nCommandBar` | Inspiration for quick workflow/agent search in sidebar |
+| `N8nActionDropdown` | Inspiration for context menus on session items |
+
+**Layout structure:**
+- **Sidebar** contains: "New Task" button, search bar, scrollable session list, user avatar + settings at bottom
+- **Main content** has an `IonHeader` with an `IonSegment` for mode switching (Chat / Cowork / Workflow)
+- **Settings** is accessed from the user avatar area in the sidebar — it is NOT a top-level tab or mode
+- **No `IonTabBar` or `IonTabs`** anywhere in the app — all navigation is via the side menu + segment switcher
+
+**Platform behavior:**
+- Desktop (≥992px): sidebar is always visible via `IonSplitPane`
+- Mobile (<992px): sidebar is a swipe-to-open drawer, opened via hamburger icon in the header
 
 ### 9. Data Display (Selective)
 
@@ -155,7 +172,7 @@ n8n-desk needs settings screens for API keys, n8n instance URL, LLM provider sel
 | Input sanitization | **Reuse** v-n8n-html directive | Security for rendered content |
 | Utility functions | **Copy** cn(), uid(), markdown() | Small, dependency-free helpers |
 | Form/settings screens | **Use Ionic** components | Platform-adaptive forms |
-| Layout/navigation | **Use Ionic** components | Adaptive nav (tabs mobile, sidebar desktop) |
+| Layout/navigation | **Use Ionic** components | Side menu (`IonMenu` + `IonSplitPane`) + `IonSegment` mode switcher |
 
 ### Integration Approach
 

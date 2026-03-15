@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent } from '@ionic/vue'
+import { IonPage, IonContent } from '@ionic/vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 </script>
 
 <template>
   <ion-page>
-    <ion-header>
-      <ion-toolbar>
-        <ion-title>Chat</ion-title>
-      </ion-toolbar>
-    </ion-header>
     <ion-content class="ion-padding">
-      <p>Chat mode — coming soon</p>
+      <p>{{ t('views.chatComingSoon') }}</p>
     </ion-content>
   </ion-page>
 </template>

@@ -1,0 +1,39 @@
+{
+  "modes": {
+    "chat": "Chat",
+    "cowork": "Cowork",
+    "workflow": "Workflow"
+  },
+  "sidebar": {
+    "newChat": "New Chat",
+    "newTask": "New Task",
+    "newWorkflow": "New Workflow",
+    "agents": "Agents",
+    "pinned": "Pinned",
+    "searchChats": "Search chats...",
+    "searchTasks": "Search tasks...",
+    "searchWorkflows": "Search workflows...",
+    "noSessionsFound": "No sessions found",
+    "chats": "Chats",
+    "tasks": "Tasks",
+    "workflows": "Workflows",
+    "componentShowcase": "Component Showcase"
+  },
+  "settings": {
+    "title": "Settings",
+    "theme": "Theme",
+    "themeSystem": "System",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "language": "Language"
+  },
+  "onboarding": {
+    "connectToN8n": "Connect to n8n"
+  },
+  "views": {
+    "chatComingSoon": "Chat mode — coming soon",
+    "coworkComingSoon": "Cowork mode — coming soon",
+    "workflowComingSoon": "Workflow mode — coming soon",
+    "onboardingComingSoon": "Onboarding — coming soon"
+  }
+}
