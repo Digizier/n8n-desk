@@ -1,26 +1,144 @@
 <script setup lang="ts">
-import { IonPage, IonContent } from '@ionic/vue'
-import { useI18n } from 'vue-i18n'
+import { ref, computed } from 'vue'
+import { IonPage } from '@ionic/vue'
+import type { WorkflowPreviewData } from '@/types/agent'
+import WorkflowChatPanel from '@/components/workflow/WorkflowChatPanel.vue'
+import WorkflowPreviewPanel from '@/components/workflow/WorkflowPreviewPanel.vue'
 
-const { t } = useI18n()
+const DEFAULT_PREVIEW_WIDTH = 420
+const MIN_PREVIEW_WIDTH = 280
+const MAX_PREVIEW_WIDTH = 700
+
+const previewData = ref<WorkflowPreviewData | null>(null)
+const previewWidth = ref(DEFAULT_PREVIEW_WIDTH)
+const isResizing = ref(false)
+
+const showPreview = computed(() => previewData.value !== null)
+
+const previewStyle = computed(() => {
+  if (!showPreview.value) return { width: '0px', minWidth: '0px' }
+  return {
+    width: `${previewWidth.value}px`,
+    minWidth: `${previewWidth.value}px`,
+  }
+})
+
+function handlePreview(data: WorkflowPreviewData) {
+  previewData.value = data
+}
+
+// Resize logic for the preview panel divider
+let startX = 0
+let startWidth = 0
+
+function onResizeStart(event: MouseEvent) {
+  event.preventDefault()
+  isResizing.value = true
+  startX = event.clientX
+  startWidth = previewWidth.value
+
+  document.body.style.cursor = 'ew-resize'
+  document.body.style.userSelect = 'none'
+
+  window.addEventListener('mousemove', onResizeMove)
+  window.addEventListener('mouseup', onResizeEnd)
+}
+
+function onResizeMove(event: MouseEvent) {
+  // Dragging left increases preview width (divider is on the left edge of preview)
+  const delta = startX - event.clientX
+  const newWidth = startWidth + delta
+  previewWidth.value = Math.max(MIN_PREVIEW_WIDTH, Math.min(MAX_PREVIEW_WIDTH, newWidth))
+}
+
+function onResizeEnd() {
+  isResizing.value = false
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  window.removeEventListener('mousemove', onResizeMove)
+  window.removeEventListener('mouseup', onResizeEnd)
+}
 </script>
 
 <template>
   <ion-page>
-    <ion-content class="ion-padding">
-      <div class="dot-bg" />
-      <p>{{ t('views.workflowComingSoon') }}</p>
-    </ion-content>
+    <div
+      :class="[
+        $style.splitLayout,
+        isResizing && $style.resizing,
+      ]"
+    >
+      <!-- Chat Panel (left, flex-grow) -->
+      <div :class="$style.chatPane">
+        <WorkflowChatPanel @preview="handlePreview" />
+      </div>
+
+      <!-- Resize divider -->
+      <div
+        v-if="showPreview"
+        :class="$style.resizeHandle"
+        @mousedown="onResizeStart"
+      />
+
+      <!-- Preview Panel (right, collapsible) -->
+      <div
+        :class="[
+          $style.previewPane,
+          !showPreview && $style.previewPaneCollapsed,
+        ]"
+        :style="previewStyle"
+      >
+        <WorkflowPreviewPanel :preview-data="previewData" />
+      </div>
+    </div>
   </ion-page>
 </template>
 
-<style lang="scss" scoped>
-.dot-bg {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image: radial-gradient(circle, var(--n8n-desk--grid-dot-color) 1px, transparent 1px);
-  background-size: 24px 24px;
+<style lang="scss" module>
+.splitLayout {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.resizing {
+  user-select: none;
+}
+
+.chatPane {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.previewPane {
+  overflow: hidden;
+  transition: width 0.2s ease, min-width 0.2s ease;
+  border-left: 1px solid var(--n8n-desk--surface-bg, var(--color--foreground));
+}
+
+.previewPaneCollapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  border-left: none;
+}
+
+.resizing .previewPane {
+  transition: none;
+}
+
+.resizeHandle {
+  width: 4px;
+  cursor: ew-resize;
+  background: transparent;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+
+  &:hover,
+  &:active {
+    background: var(--color--primary, #ff6d5a);
+    opacity: 0.5;
+  }
 }
 </style>

@@ -1,21 +1,23 @@
 <script setup lang="ts">
 import { IonButton, IonSearchbar } from '@ionic/vue'
 import { Plus } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SessionList from './SessionList.vue'
-import { mockWorkflowSessions } from '@/mocks/sidebar'
+import { useWorkflowSessionsStore } from '@/stores/workflow-sessions'
 
 const { t } = useI18n()
+const store = useWorkflowSessionsStore()
 const searchQuery = ref('')
-const activeSessionId = ref<string | null>(null)
 
-function newWorkflow() {
-  // TODO: create new workflow session
+const activeSessionId = computed(() => store.activeSessionId)
+
+async function newWorkflow() {
+  await store.createSession()
 }
 
-function selectSession(sessionId: string) {
-  activeSessionId.value = sessionId
+async function selectSession(sessionId: string) {
+  await store.selectSession(sessionId)
 }
 </script>
 
@@ -40,7 +42,7 @@ function selectSession(sessionId: string) {
 
     <!-- Session List -->
     <SessionList
-      :sessions="mockWorkflowSessions"
+      :sessions="store.sessions"
       :active-session-id="activeSessionId"
       :search-query="searchQuery"
       :list-header="t('sidebar.workflows')"
