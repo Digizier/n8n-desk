@@ -8,6 +8,13 @@ export interface SessionMeta {
   messageCount: number
 }
 
+export interface ChatSessionMeta extends SessionMeta {
+  serverSessionId?: string
+  model?: string
+  lastSequenceNumber?: number
+  syncedAt?: string
+}
+
 export interface SessionMessage {
   id: string
   role: 'user' | 'assistant' | 'tool' | 'system'
