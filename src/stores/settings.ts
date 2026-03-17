@@ -1,10 +1,11 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import type { ThemeMode, AppMode, AppSettings, SupportedLocale } from '@/types/settings'
+import type { ThemeMode, AppMode, AppSettings, SupportedLocale, LlmConfig } from '@/types/settings'
 import { localStorageService } from '@/services/local-storage'
 import { setAppLocale } from '@/i18n'
 
 const CONFIG_PATH = 'config.json'
+const LLM_CONFIG_PATH = 'llm.json'
 
 const DEFAULTS: AppSettings = {
   theme: 'system',
@@ -18,6 +19,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const defaultInstanceId = ref<string | null>(DEFAULTS.defaultInstanceId)
   const lastMode = ref<AppMode>(DEFAULTS.lastMode)
   const locale = ref<SupportedLocale>(DEFAULTS.locale)
+  const llmConfig = ref<LlmConfig | null>(null)
+
+  const hasLlmConfig = computed(() => llmConfig.value !== null)
 
   async function hydrate(): Promise<void> {
     const saved = await localStorageService.readJson<AppSettings>(CONFIG_PATH)
@@ -56,15 +60,29 @@ export const useSettingsStore = defineStore('settings', () => {
     void save()
   }
 
+  async function hydrateLlm(): Promise<void> {
+    const saved = await localStorageService.readJson<LlmConfig>(LLM_CONFIG_PATH)
+    llmConfig.value = saved ?? null
+  }
+
+  async function saveLlm(config: LlmConfig): Promise<void> {
+    llmConfig.value = config
+    await localStorageService.writeJson(LLM_CONFIG_PATH, config)
+  }
+
   return {
     theme,
     defaultInstanceId,
     lastMode,
     locale,
+    llmConfig,
+    hasLlmConfig,
     hydrate,
     save,
     setTheme,
     setLastMode,
     setLocale,
+    hydrateLlm,
+    saveLlm,
   }
 })
