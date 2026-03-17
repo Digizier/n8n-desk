@@ -1,11 +1,9 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useWorkflowSessionsStore } from '@/stores/workflow-sessions'
-import { useSettingsStore } from '@/stores/settings'
 import type { AgentEvent } from '@/types/agent'
 
 export function useWorkflowAgent() {
   const sessionStore = useWorkflowSessionsStore()
-  const settingsStore = useSettingsStore()
 
   const messages = computed(() => sessionStore.messages)
   const isRunning = computed(() => sessionStore.isAgentRunning)

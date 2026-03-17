@@ -117,15 +117,20 @@ export class DeepAgentsRunner implements AgentRunner {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const agent = createDeepAgent({
         name: 'n8n-desk-workflow',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         model: chatModel as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tools: tools as any,
         systemPrompt: config.systemPrompt,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         backend: (rt: any) => new StateBackend(rt),
         checkpointer: new MemorySaver(),
         interruptOn: Object.fromEntries(interruptTools.map((t) => [t, true])),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
 
       // Stream agent events
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const stream = await (agent.stream as any)(message, {
         configurable: { thread_id: sessionId },
         signal: abortController.signal,

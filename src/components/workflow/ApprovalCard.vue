@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { IonButton, IonIcon } from '@ionic/vue'
 import { shieldCheckmarkOutline } from 'ionicons/icons'
-import type { WorkflowJson, WorkflowPreviewData } from '@/types/agent'
+import type { WorkflowJson } from '@/types/agent'
 import WorkflowEmbed from './WorkflowEmbed.vue'
 
 interface PendingApproval {
@@ -15,7 +15,7 @@ interface Props {
   approval: PendingApproval
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 
 const emit = defineEmits<{
   approve: [id: string]

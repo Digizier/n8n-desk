@@ -1,7 +1,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
-import type { AgentRunner, AgentRunnerConfig, AgentBackend, LlmProviderConfig } from './types'
+import type { AgentRunner, AgentBackend, LlmProviderConfig } from './types'
 
 const BASE_DIR = path.join(os.homedir(), '.n8n-desk')
 const LLM_CONFIG_PATH = path.join(BASE_DIR, 'llm.json')

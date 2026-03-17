@@ -60,11 +60,11 @@ async function send() {
   await sendMessage(text)
 }
 
-function handleApprove(id: string) {
+function handleApprove(_id: string) {
   approveAction('approve')
 }
 
-function handleReject(id: string) {
+function handleReject(_id: string) {
   approveAction('reject')
 }
 

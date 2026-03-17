@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useWorkflowSessionsStore } from '@/stores/workflow-sessions'
-import type { AgentEvent } from '@/types/agent'
 
 // Mock local-storage service
 vi.mock('@/services/local-storage', () => {

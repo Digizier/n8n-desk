@@ -217,7 +217,7 @@ export function registerAuthHandlers(): void {
       let metadata
       try {
         metadata = await discoverServer(url)
-      } catch (err) {
+      } catch {
         return {
           success: false,
           error: `Cannot reach n8n at ${url}. Check the URL and try again.`,
@@ -235,7 +235,7 @@ export function registerAuthHandlers(): void {
         let clientInfo
         try {
           clientInfo = await registerClient(metadata, listener.redirectUri)
-        } catch (err) {
+        } catch {
           listener.cleanup()
           return {
             success: false,

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { IonModal, IonButton, IonIcon } from '@ionic/vue'
+import { IonModal, IonButton } from '@ionic/vue'
 import { X } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
-const props = defineProps<{
+defineProps<{
   isOpen: boolean
   title: string
   saveLabel?: string

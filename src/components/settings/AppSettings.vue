@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { IonInput, IonSelect, IonSelectOption, IonButton, IonIcon } from '@ionic/vue'
+import { IonInput, IonSelect, IonSelectOption, IonButton } from '@ionic/vue'
 import { ref, reactive, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  Settings as SettingsIcon, Globe, Trash2, Server, Bot,
+  Settings as SettingsIcon, Trash2, Bot,
 } from 'lucide-vue-next'
 import SettingsModal from '@/components/ui/SettingsModal.vue'
 import SettingsNavGroup from '@/components/ui/SettingsNavGroup.vue'
