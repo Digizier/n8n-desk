@@ -94,6 +94,7 @@ export interface WorkflowJson {
   staticData?: unknown
   tags?: string[]
   active?: boolean
+  [key: string]: unknown
 }
 
 export interface WorkflowPreviewData {
