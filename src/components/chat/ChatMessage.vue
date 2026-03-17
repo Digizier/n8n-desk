@@ -4,6 +4,7 @@ import type { SessionMessage } from '@/types/session'
 import type { ChatMessageContentChunk } from '@/types/chathub'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import BlinkingCursor from './BlinkingCursor.vue'
+import ArtifactBlock from './ArtifactBlock.vue'
 
 const props = defineProps<{
   message: SessionMessage
@@ -75,19 +76,10 @@ const formattedTime = computed(() => {
           :content="chunk.content"
         />
 
-        <!-- Artifact chunks: placeholder until ArtifactBlock is created -->
-        <div
+        <ArtifactBlock
           v-else-if="chunk.type === 'artifact-create' || chunk.type === 'artifact-edit'"
-          :class="$style.artifactPlaceholder"
-        >
-          <div :class="$style.artifactLabel">
-            {{ chunk.type === 'artifact-create' ? '📄' : '✏️' }}
-            {{ 'command' in chunk && chunk.command ? chunk.command.title : 'Artifact' }}
-          </div>
-          <div v-if="'isIncomplete' in chunk && chunk.isIncomplete" :class="$style.artifactLoading">
-            Generating…
-          </div>
-        </div>
+          :chunk="chunk"
+        />
 
         <!-- Button chunk -->
         <div
