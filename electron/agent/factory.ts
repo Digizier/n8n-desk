@@ -55,33 +55,7 @@ export async function resolveLlmConfig(): Promise<LlmProviderConfig | null> {
 
 // ClaudeSdkRunner is imported from its own module
 import { ClaudeSdkRunner } from './claude-sdk-runner'
-
-/**
- * Placeholder runner for the Deep Agents SDK backend.
- * Will be implemented when the SDK integration is built.
- */
-class DeepAgentsRunner implements AgentRunner {
-  async *invoke(
-    sessionId: string,
-    _message: string,
-    _config: AgentRunnerConfig,
-  ): AsyncIterable<import('./types').AgentStreamEvent> {
-    yield {
-      type: 'error',
-      sessionId,
-      data: { message: 'Deep Agents backend is not yet implemented', code: 'NOT_IMPLEMENTED' },
-    }
-    yield { type: 'done', sessionId, data: { reason: 'error' } }
-  }
-
-  async stop(_sessionId: string): Promise<void> {
-    // No-op for stub
-  }
-
-  async approve(_sessionId: string, _decision: 'approve' | 'reject'): Promise<void> {
-    // No-op for stub
-  }
-}
+import { DeepAgentsRunner } from './deep-agents-runner'
 
 // --- Factory ---
 
