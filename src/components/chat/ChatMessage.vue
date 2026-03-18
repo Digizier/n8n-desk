@@ -38,13 +38,6 @@ const visibleChunks = computed(() =>
   contentChunks.value.filter((c) => c.type !== 'hidden')
 )
 
-/** Whether the message has any artifact chunks */
-const hasArtifacts = computed(() =>
-  contentChunks.value.some(
-    (c) => c.type === 'artifact-create' || c.type === 'artifact-edit'
-  )
-)
-
 const formattedTime = computed(() => {
   try {
     const date = new Date(props.message.ts)

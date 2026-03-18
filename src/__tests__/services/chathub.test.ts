@@ -22,38 +22,38 @@ describe('ChatHubService', () => {
   })
 
   describe('getModels', () => {
-    it('calls GET /chat/models', async () => {
+    it('calls POST /rest/chat/models', async () => {
       const mockResponse = { models: [], agents: [] }
-      vi.mocked(api.get).mockResolvedValue(mockResponse)
+      vi.mocked(api.post).mockResolvedValue(mockResponse)
 
       const result = await service.getModels()
 
-      expect(api.get).toHaveBeenCalledWith('/chat/models')
+      expect(api.post).toHaveBeenCalledWith('/rest/chat/models', { credentials: {} })
       expect(result).toEqual(mockResponse)
     })
   })
 
   describe('listSessions', () => {
-    it('calls GET /chat/conversations without params', async () => {
+    it('calls GET /rest/chat/conversations without params', async () => {
       await service.listSessions()
-      expect(api.get).toHaveBeenCalledWith('/chat/conversations')
+      expect(api.get).toHaveBeenCalledWith('/rest/chat/conversations')
     })
 
     it('appends cursor and limit as query params', async () => {
       await service.listSessions({ cursor: 'abc', limit: 10 })
-      expect(api.get).toHaveBeenCalledWith('/chat/conversations?cursor=abc&limit=10')
+      expect(api.get).toHaveBeenCalledWith('/rest/chat/conversations?cursor=abc&limit=10')
     })
 
     it('appends only cursor when limit is omitted', async () => {
       await service.listSessions({ cursor: 'xyz' })
-      expect(api.get).toHaveBeenCalledWith('/chat/conversations?cursor=xyz')
+      expect(api.get).toHaveBeenCalledWith('/rest/chat/conversations?cursor=xyz')
     })
   })
 
   describe('getSession', () => {
     it('calls GET with encoded session ID', async () => {
       await service.getSession('session/123')
-      expect(api.get).toHaveBeenCalledWith('/chat/conversations/session%2F123')
+      expect(api.get).toHaveBeenCalledWith('/rest/chat/conversations/session%2F123')
     })
   })
 
@@ -61,29 +61,34 @@ describe('ChatHubService', () => {
     it('posts message with required fields', async () => {
       await service.sendMessage({
         sessionId: 's1',
+        messageId: 'msg1',
         message: 'hello',
         model: { provider: 'openai', model: 'gpt-4.1' } as never,
       })
 
-      expect(api.post).toHaveBeenCalledWith('/chat/conversations/s1/send', {
+      expect(api.post).toHaveBeenCalledWith('/rest/chat/conversations/send', expect.objectContaining({
+        sessionId: 's1',
+        messageId: 'msg1',
         message: 'hello',
         model: { provider: 'openai', model: 'gpt-4.1' },
         previousMessageId: null,
+        credentials: {},
         attachments: [],
-      })
+      }))
     })
 
     it('includes previousMessageId and attachments when provided', async () => {
       const attachments = [{ name: 'file.txt', mimeType: 'text/plain', url: 'http://x' }]
       await service.sendMessage({
         sessionId: 's1',
+        messageId: 'msg1',
         message: 'hi',
         model: { provider: 'openai', model: 'gpt-4.1' } as never,
         previousMessageId: 'msg-1',
         attachments: attachments as never[],
       })
 
-      expect(api.post).toHaveBeenCalledWith('/chat/conversations/s1/send', expect.objectContaining({
+      expect(api.post).toHaveBeenCalledWith('/rest/chat/conversations/send', expect.objectContaining({
         previousMessageId: 'msg-1',
         attachments,
       }))
@@ -99,12 +104,13 @@ describe('ChatHubService', () => {
         model: { provider: 'anthropic', model: 'claude' } as never,
       })
 
-      expect(api.post).toHaveBeenCalledWith('/chat/conversations/s1/edit', {
-        messageId: 'msg-1',
-        message: 'updated',
-        model: { provider: 'anthropic', model: 'claude' },
-        attachments: [],
-      })
+      expect(api.post).toHaveBeenCalledWith(
+        '/rest/chat/conversations/s1/messages/msg-1/edit',
+        expect.objectContaining({
+          message: 'updated',
+          model: { provider: 'anthropic', model: 'claude' },
+        }),
+      )
     })
   })
 
@@ -116,38 +122,40 @@ describe('ChatHubService', () => {
         model: { provider: 'openai', model: 'gpt-4.1' } as never,
       })
 
-      expect(api.post).toHaveBeenCalledWith('/chat/conversations/s1/regenerate', {
-        messageId: 'msg-1',
-        model: { provider: 'openai', model: 'gpt-4.1' },
-      })
+      expect(api.post).toHaveBeenCalledWith(
+        '/rest/chat/conversations/s1/messages/msg-1/regenerate',
+        expect.objectContaining({
+          model: { provider: 'openai', model: 'gpt-4.1' },
+        }),
+      )
     })
   })
 
   describe('stopGeneration', () => {
-    it('posts to /stop endpoint with no body', async () => {
-      await service.stopGeneration('s1')
-      expect(api.post).toHaveBeenCalledWith('/chat/conversations/s1/stop')
+    it('posts to /stop endpoint', async () => {
+      await service.stopGeneration('s1', 'msg-1')
+      expect(api.post).toHaveBeenCalledWith('/rest/chat/conversations/s1/messages/msg-1/stop')
     })
   })
 
   describe('updateSession', () => {
     it('patches session with title', async () => {
       await service.updateSession('s1', { title: 'New Title' })
-      expect(api.patch).toHaveBeenCalledWith('/chat/conversations/s1', { title: 'New Title' })
+      expect(api.patch).toHaveBeenCalledWith('/rest/chat/conversations/s1', { title: 'New Title' })
     })
   })
 
   describe('deleteSession', () => {
     it('calls DELETE on session', async () => {
       await service.deleteSession('s1')
-      expect(api.delete).toHaveBeenCalledWith('/chat/conversations/s1')
+      expect(api.delete).toHaveBeenCalledWith('/rest/chat/conversations/s1')
     })
   })
 
   describe('reconnect', () => {
     it('posts to /reconnect endpoint', async () => {
       await service.reconnect('s1')
-      expect(api.post).toHaveBeenCalledWith('/chat/conversations/s1/reconnect')
+      expect(api.post).toHaveBeenCalledWith('/rest/chat/conversations/s1/reconnect')
     })
   })
 })

@@ -8,7 +8,7 @@ import { useI18n } from 'vue-i18n'
 import { useInstancesStore } from '@/stores/instances'
 import { useAuthStore } from '@/stores/auth'
 
-const props = defineProps<{
+defineProps<{
   trigger?: string
 }>()
 

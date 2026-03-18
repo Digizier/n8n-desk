@@ -2,7 +2,7 @@
 import {
   IonItem, IonLabel,
   IonPage, IonRouterOutlet, IonAvatar,
-  IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
+  IonHeader, IonToolbar, IonButtons, IonButton,
   IonSegment, IonSegmentButton,
 } from '@ionic/vue'
 import { User, Settings, ChevronLeft, ChevronRight, Bot, Menu } from 'lucide-vue-next'

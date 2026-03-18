@@ -28,7 +28,6 @@ function getStreamService(): ChatHubStreamService {
 }
 
 /** Module-level credential cache — shared across all useChatHub() instances */
-let cachedCredsByProvider: Record<string, string | null> = {}
 let cachedCredsByType: Record<string, { id: string; name: string }> = {}
 
 export function useChatHub() {
@@ -188,7 +187,6 @@ export function useChatHub() {
     try {
       // Build credentials map so the backend can discover LLM provider models
       const resolved = await service.buildCredentialsMap()
-      cachedCredsByProvider = resolved.byProvider
       cachedCredsByType = resolved.byType
       const rawResponse = await service.getModels(resolved.byProvider)
 

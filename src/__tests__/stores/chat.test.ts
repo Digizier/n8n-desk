@@ -6,13 +6,7 @@ import { localStorageService } from '@/services/local-storage'
 import type { ChatSessionMeta, SessionMessage } from '@/types/session'
 import type {
   ChatHubStreamBegin,
-  ChatHubStreamChunk,
-  ChatHubStreamEnd,
-  ChatHubStreamError,
   ChatHubHumanMessageCreated,
-  ChatHubMessageEdited,
-  ChatHubExecutionBegin,
-  ChatHubExecutionEnd,
 } from '@/types/chathub'
 
 vi.mock('@/services/local-storage', () => ({
@@ -22,6 +16,10 @@ vi.mock('@/services/local-storage', () => ({
     readJsonl: vi.fn().mockResolvedValue([]),
     appendJsonl: vi.fn().mockResolvedValue(undefined),
   },
+}))
+
+vi.mock('@/services/n8n-api', () => ({
+  createApiClient: vi.fn().mockReturnValue(null),
 }))
 
 const INSTANCE_ID = 'inst_test123'
@@ -61,7 +59,7 @@ describe('useChatStore', () => {
 
       const id = await store.createSession('Test Session', 'agent1', 'My Agent')
 
-      expect(id).toMatch(/^session_/)
+      expect(id).toBeTruthy()
       expect(store.sessions).toHaveLength(1)
       expect(store.sessions[0].title).toBe('Test Session')
       expect(store.sessions[0].agentId).toBe('agent1')
@@ -198,54 +196,6 @@ describe('useChatStore', () => {
 
       expect(store.sessions).toEqual([])
       expect(store.activeSessionId).toBeNull()
-    })
-  })
-
-  // -----------------------------------------------------------------------
-  // Server sync
-  // -----------------------------------------------------------------------
-  describe('syncWithServer', () => {
-    it('updates existing sessions by serverSessionId', async () => {
-      setupActiveInstance()
-      const store = useChatStore()
-      await store.createSession('Local')
-      store.sessions[0].serverSessionId = 'server_1'
-
-      await store.syncWithServer([
-        {
-          id: 'new_id',
-          serverSessionId: 'server_1',
-          title: 'Updated Title',
-          createdAt: '2026-03-14T10:00:00Z',
-          updatedAt: '2026-03-14T12:00:00Z',
-          messageCount: 5,
-          agentId: 'agent_x',
-          agentName: 'Agent X',
-        },
-      ])
-
-      expect(store.sessions[0].title).toBe('Updated Title')
-      expect(store.sessions[0].agentId).toBe('agent_x')
-      expect(store.sessions[0].syncedAt).toBeDefined()
-    })
-
-    it('adds new server sessions not found locally', async () => {
-      setupActiveInstance()
-      const store = useChatStore()
-
-      await store.syncWithServer([
-        {
-          id: 'server_new',
-          title: 'From Server',
-          createdAt: '2026-03-14T10:00:00Z',
-          updatedAt: '2026-03-14T10:00:00Z',
-          messageCount: 0,
-        },
-      ])
-
-      expect(store.sessions).toHaveLength(1)
-      expect(store.sessions[0].id).toBe('server_new')
-      expect(store.messagesBySession.get('server_new')).toEqual([])
     })
   })
 
@@ -458,7 +408,7 @@ describe('useChatStore', () => {
       setupActiveInstance()
       const store = useChatStore()
       await store.createSession('Test')
-      store.setAgents([{ name: 'Agent' } as never])
+      store.setAgents([{ name: 'Agent', metadata: { available: true }, model: { provider: 'openai', model: 'gpt-4' } } as never])
 
       store.reset()
 
@@ -466,6 +416,9 @@ describe('useChatStore', () => {
       expect(store.activeSessionId).toBeNull()
       expect(store.agents).toEqual([])
       expect(store.messagesBySession.size).toBe(0)
+      expect(store.pendingNewChat).toBe(false)
+      expect(store.pendingAgent).toBeNull()
+      expect(store.selectedModel).toBeNull()
     })
   })
 

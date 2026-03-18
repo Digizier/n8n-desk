@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IonList, IonItem, IonLabel, IonListHeader } from '@ionic/vue'
+import { IonList, IonItem } from '@ionic/vue'
 import { Bot } from 'lucide-vue-next'
 import { computed, ref, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -46,10 +46,6 @@ const filteredSessions = computed(() => {
 })
 
 const groupedSessions = computed(() => groupSessionsByDate(filteredSessions.value))
-
-function getAgentInitial(session: SessionMeta): string {
-  return (session.agentName ?? session.title).charAt(0).toUpperCase()
-}
 
 function openContextMenu(sessionId: string, title: string, event: Event) {
   event.preventDefault()

@@ -6,15 +6,14 @@ import {
   IonSelectOption, IonRange, IonSegment, IonSegmentButton, IonCard, IonCardHeader,
   IonCardTitle, IonCardSubtitle, IonCardContent, IonChip, IonBadge, IonAvatar,
   IonNote, IonSearchbar, IonFab, IonFabButton, IonProgressBar, IonSpinner,
-  IonAlert, IonToast, IonActionSheet, IonAccordion, IonAccordionGroup,
-  IonItemDivider, IonItemSliding, IonItemOption, IonItemOptions, IonThumbnail,
+  IonAccordion, IonAccordionGroup,
+  IonItemSliding, IonItemOption, IonItemOptions,
   IonSkeletonText, IonText,
   alertController, toastController, actionSheetController,
 } from '@ionic/vue'
 import {
   Heart, Star, Trash2, Share2, Plus, Check, X, User,
-  MoreHorizontal, ChevronRight, Bell, Mail,
-  MessageSquare, Settings, Wrench, GitBranch, AlertTriangle, Info,
+  ChevronRight, Bell, Mail,
 } from 'lucide-vue-next'
 import { ref } from 'vue'
 

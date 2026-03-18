@@ -10,5 +10,5 @@ export const i18n = createI18n<[MessageSchema], 'en'>({
 })
 
 export function setAppLocale(locale: string): void {
-  ;(i18n.global.locale as unknown as { value: string }).value = locale
+  (i18n.global.locale as unknown as { value: string }).value = locale
 }

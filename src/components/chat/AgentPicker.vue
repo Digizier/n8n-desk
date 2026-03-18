@@ -21,7 +21,6 @@ import type {
   ChatModelDto,
   ChatHubConversationModel,
   ChatHubProvider,
-  AgentIconOrEmoji,
 } from '@/types/chathub'
 
 const props = defineProps<{

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { IonContent } from '@ionic/vue'
+
+type HTMLIonContentElement = HTMLElement & { getScrollElement: () => Promise<HTMLElement> }
 import { MessageSquare } from 'lucide-vue-next'
 import ChatMessage from './ChatMessage.vue'
 import { useChatStore } from '@/stores/chat'
