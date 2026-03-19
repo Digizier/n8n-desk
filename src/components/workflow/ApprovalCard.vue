@@ -92,7 +92,7 @@ function handlePreviewClick() {
 .title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--color--text-dark, #333);
+  color: var(--color--text--shade-1);
 }
 
 .body {
@@ -108,19 +108,19 @@ function handlePreviewClick() {
 
 .operationLabel {
   font-size: 12px;
-  color: var(--color--text-light, #999);
+  color: var(--color--text--tint-1);
 }
 
 .operationName {
   font-size: 13px;
   font-weight: 500;
-  color: var(--color--text-dark, #333);
+  color: var(--color--text--shade-1);
 }
 
 .description {
   font-size: 13px;
   line-height: 1.5;
-  color: var(--color--text-base, #666);
+  color: var(--color--text);
   margin: 0 0 12px;
 }
 

@@ -11,6 +11,7 @@ async function ensureDir(dirPath: string): Promise<void> {
 
 export function registerStorageHandlers(): void {
   ipcMain.handle('storage:read', async (_event, relativePath: string) => {
+    if (!relativePath || typeof relativePath !== 'string') return null
     try {
       const fullPath = path.join(BASE_DIR, relativePath)
       const content = await fs.readFile(fullPath, 'utf-8')
@@ -21,12 +22,14 @@ export function registerStorageHandlers(): void {
   })
 
   ipcMain.handle('storage:write', async (_event, relativePath: string, data: string) => {
+    if (!relativePath || typeof relativePath !== 'string') return
     const fullPath = path.join(BASE_DIR, relativePath)
     await ensureDir(path.dirname(fullPath))
     await fs.writeFile(fullPath, data, { encoding: 'utf-8', mode: 0o600 })
   })
 
   ipcMain.handle('storage:append', async (_event, relativePath: string, line: string) => {
+    if (!relativePath || typeof relativePath !== 'string') return
     const fullPath = path.join(BASE_DIR, relativePath)
     await ensureDir(path.dirname(fullPath))
     await fs.appendFile(fullPath, line + '\n', { encoding: 'utf-8', mode: 0o600 })

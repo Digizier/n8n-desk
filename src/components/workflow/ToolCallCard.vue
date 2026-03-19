@@ -38,7 +38,7 @@ const statusColor = computed(() => {
     case 'completed': return 'var(--color--success, #10b981)'
     case 'failed': return 'var(--color--danger, #ef4444)'
     case 'awaiting_approval': return 'var(--color--warning, #f59e0b)'
-    default: return 'var(--color--text-light, #999)'
+    default: return 'var(--color--text--tint-1)'
   }
 })
 
@@ -47,12 +47,28 @@ const isRunning = computed(() =>
 )
 
 const resultWorkflow = computed<WorkflowJson | null>(() => {
-  if (!props.toolCall.result || typeof props.toolCall.result !== 'object') return null
-  const r = props.toolCall.result as Record<string, unknown>
+  if (!props.toolCall.result) return null
+
+  // Result may be a JSON string from the agent runner
+  let parsed: unknown = props.toolCall.result
+  if (typeof parsed === 'string') {
+    try { parsed = JSON.parse(parsed) } catch { return null }
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null
+
+  const r = parsed as Record<string, unknown>
   if (Array.isArray(r.nodes) && r.connections) return r as unknown as WorkflowJson
   if (typeof r.workflow === 'object' && r.workflow !== null) {
     const w = r.workflow as Record<string, unknown>
     if (Array.isArray(w.nodes)) return w as unknown as WorkflowJson
+  }
+  // MCP structured format
+  if (typeof r.structuredContent === 'object' && r.structuredContent !== null) {
+    const sc = r.structuredContent as Record<string, unknown>
+    if (typeof sc.workflow === 'object' && sc.workflow !== null) {
+      const w = sc.workflow as Record<string, unknown>
+      if (Array.isArray(w.nodes)) return w as unknown as WorkflowJson
+    }
   }
   return null
 })
@@ -108,28 +124,31 @@ function formatToolName(name: string): string {
 
 <style lang="scss" module>
 .card {
-  border: 1px solid var(--n8n-desk--surface-bg, var(--color--foreground));
-  border-radius: 8px;
+  border: none;
+  border-radius: 0;
   overflow: hidden;
-  background: var(--n8n-desk--surface-bg, var(--color--foreground));
-  margin: 4px 0;
+  background: none;
+  margin: 2px 0;
 }
 
 .header {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
+  gap: 0;
+  padding: 4px 0;
   cursor: pointer;
   user-select: none;
+  border-radius: 6px;
 
   &:hover {
-    background: var(--n8n-desk--surface-raised-bg, var(--color--foreground--tint-2));
+    background: var(--n8n-desk--surface-bg, var(--color--foreground));
+    padding: 4px 8px;
+    margin: 0 -8px;
   }
 }
 
 .left {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -138,7 +157,7 @@ function formatToolName(name: string): string {
 .spinner {
   width: 16px;
   height: 16px;
-  --color: var(--color--text-light, #999);
+  --color: var(--color--text--tint-1);
 }
 
 .statusIcon {
@@ -148,14 +167,14 @@ function formatToolName(name: string): string {
 
 .toolIcon {
   font-size: 14px;
-  color: var(--color--text-light, #999);
+  color: var(--color--text--tint-1);
   flex-shrink: 0;
 }
 
 .toolName {
   font-size: 13px;
   font-weight: 500;
-  color: var(--color--text-dark, #333);
+  color: var(--color--text--shade-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -163,12 +182,13 @@ function formatToolName(name: string): string {
 
 .chevron {
   font-size: 14px;
-  color: var(--color--text-light, #999);
+  color: var(--color--text--tint-1);
   flex-shrink: 0;
+  margin-left: 4px;
 }
 
 .body {
-  padding: 0 12px 12px;
+  padding: 4px 0 8px 22px;
 }
 
 .section {
@@ -179,7 +199,7 @@ function formatToolName(name: string): string {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  color: var(--color--text-light, #999);
+  color: var(--color--text--tint-1);
   margin-bottom: 4px;
 }
 
@@ -194,6 +214,6 @@ function formatToolName(name: string): string {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--color--text-dark, #333);
+  color: var(--color--text--shade-1);
 }
 </style>

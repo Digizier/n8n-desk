@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { IonPage } from '@ionic/vue'
-import type { WorkflowPreviewData } from '@/types/agent'
+import { useWorkflowSessionsStore } from '@/stores/workflow-sessions'
 import WorkflowChatPanel from '@/components/workflow/WorkflowChatPanel.vue'
 import WorkflowPreviewPanel from '@/components/workflow/WorkflowPreviewPanel.vue'
 
@@ -9,11 +9,11 @@ const DEFAULT_PREVIEW_WIDTH = 420
 const MIN_PREVIEW_WIDTH = 280
 const MAX_PREVIEW_WIDTH = 700
 
-const previewData = ref<WorkflowPreviewData | null>(null)
+const sessionStore = useWorkflowSessionsStore()
 const previewWidth = ref(DEFAULT_PREVIEW_WIDTH)
 const isResizing = ref(false)
 
-const showPreview = computed(() => previewData.value !== null)
+const showPreview = computed(() => sessionStore.isPanelOpen)
 
 const previewStyle = computed(() => {
   if (!showPreview.value) return { width: '0px', minWidth: '0px' }
@@ -23,8 +23,8 @@ const previewStyle = computed(() => {
   }
 })
 
-function handlePreview(data: WorkflowPreviewData) {
-  previewData.value = data
+function handleClosePanel() {
+  sessionStore.closePanel()
 }
 
 // Resize logic for the preview panel divider
@@ -70,7 +70,7 @@ function onResizeEnd() {
     >
       <!-- Chat Panel (left, flex-grow) -->
       <div :class="$style.chatPane">
-        <WorkflowChatPanel @preview="handlePreview" />
+        <WorkflowChatPanel />
       </div>
 
       <!-- Resize divider -->
@@ -88,7 +88,10 @@ function onResizeEnd() {
         ]"
         :style="previewStyle"
       >
-        <WorkflowPreviewPanel :preview-data="previewData" />
+        <WorkflowPreviewPanel
+          :preview-data="sessionStore.previewData"
+          @close="handleClosePanel"
+        />
       </div>
     </div>
   </ion-page>

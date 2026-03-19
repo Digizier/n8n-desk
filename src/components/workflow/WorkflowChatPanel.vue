@@ -1,17 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { IonIcon, IonSpinner } from '@ionic/vue'
+import { IonIcon } from '@ionic/vue'
 import { sendOutline, settingsOutline } from 'ionicons/icons'
 import { useWorkflowAgent } from '@/composables/useWorkflowAgent'
 import { useSettingsStore } from '@/stores/settings'
-import type { WorkflowPreviewData } from '@/types/agent'
+import { useWorkflowSessionsStore } from '@/stores/workflow-sessions'
+import type { WorkflowPreviewData, WorkflowJson } from '@/types/agent'
 import { renderMarkdown } from '@/utils/markdown'
 import ToolCallCard from './ToolCallCard.vue'
 import ApprovalCard from './ApprovalCard.vue'
-
-const emit = defineEmits<{
-  preview: [data: WorkflowPreviewData]
-}>()
+import WorkflowInlineCard from './WorkflowInlineCard.vue'
 
 const {
   messages,
@@ -23,6 +21,7 @@ const {
 } = useWorkflowAgent()
 
 const settingsStore = useSettingsStore()
+const sessionStore = useWorkflowSessionsStore()
 const hasLlmConfig = computed(() => settingsStore.hasLlmConfig)
 
 const inputText = ref('')
@@ -32,6 +31,13 @@ const scrollContainerRef = ref<HTMLDivElement | null>(null)
 const canSend = computed(() =>
   inputText.value.trim().length > 0 && !isRunning.value && hasLlmConfig.value
 )
+
+// Check if the last message is an assistant message still being streamed
+const isStreaming = computed(() => {
+  if (!isRunning.value) return false
+  const last = messages.value[messages.value.length - 1]
+  return last?.role === 'assistant'
+})
 
 // Auto-resize textarea
 function resizeTextarea() {
@@ -68,8 +74,71 @@ function handleReject(_id: string) {
   approveAction('reject')
 }
 
-function handleToolPreview(data: WorkflowPreviewData) {
-  emit('preview', data)
+function handlePopOut(data: WorkflowPreviewData) {
+  sessionStore.openPanel(data)
+}
+
+/** Extract a WorkflowJson from a raw result object */
+function findWorkflowInResult(r: Record<string, unknown>): { id: string; name: string; wf: WorkflowJson } | null {
+  // Direct: { nodes, connections }
+  if (Array.isArray(r.nodes) && r.connections) {
+    return { id: (r.id as string) ?? '', name: (r.name as string) ?? 'Workflow', wf: r as unknown as WorkflowJson }
+  }
+  // Nested: { workflow: { nodes, connections } }
+  if (typeof r.workflow === 'object' && r.workflow !== null) {
+    const w = r.workflow as Record<string, unknown>
+    if (Array.isArray(w.nodes)) {
+      return { id: (w.id as string) ?? '', name: (w.name as string) ?? 'Workflow', wf: w as unknown as WorkflowJson }
+    }
+  }
+  // MCP structured: { structuredContent: { workflow: { nodes, connections } } }
+  if (typeof r.structuredContent === 'object' && r.structuredContent !== null) {
+    const sc = r.structuredContent as Record<string, unknown>
+    if (typeof sc.workflow === 'object' && sc.workflow !== null) {
+      const w = sc.workflow as Record<string, unknown>
+      if (Array.isArray(w.nodes)) {
+        return { id: (w.id as string) ?? '', name: (w.name as string) ?? 'Workflow', wf: w as unknown as WorkflowJson }
+      }
+    }
+  }
+  return null
+}
+
+/** Extract workflow JSON from a tool call result, with diff support via history */
+function extractWorkflowFromToolResult(result: unknown): WorkflowPreviewData | null {
+  if (!result) return null
+
+  // Result may be a JSON string — parse it first
+  let parsed = result
+  if (typeof parsed === 'string') {
+    try { parsed = JSON.parse(parsed) } catch { return null }
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null
+
+  const found = findWorkflowInResult(parsed as Record<string, unknown>)
+  if (!found) return null
+
+  // Look up previous version for diff
+  const previousVersion = found.id ? sessionStore.workflowHistory.get(found.id) : undefined
+
+  // Store this version as latest for future diffs
+  if (found.id) {
+    sessionStore.workflowHistory.set(found.id, structuredClone(found.wf))
+  }
+
+  return {
+    workflowId: found.id,
+    name: found.name,
+    workflow: found.wf,
+    workflowBefore: previousVersion,
+  }
+}
+
+/** Get inline preview data for a tool call by its ID */
+function getInlinePreview(toolCallId: string): WorkflowPreviewData | null {
+  const tc = toolCalls.value.find((t) => t.id === toolCallId)
+  if (!tc || tc.status !== 'completed' || !tc.result) return null
+  return extractWorkflowFromToolResult(tc.result)
 }
 
 // Find tool call for a given message
@@ -89,6 +158,12 @@ watch(
   () => nextTick(scrollToBottom),
 )
 
+// Also scroll when streaming text chunks update the last message
+watch(
+  () => messages.value[messages.value.length - 1]?.content,
+  () => nextTick(scrollToBottom),
+)
+
 watch(isRunning, () => nextTick(scrollToBottom))
 
 onMounted(scrollToBottom)
@@ -96,8 +171,12 @@ onMounted(scrollToBottom)
 
 <template>
   <div :class="$style.panel">
+    <!-- Dot-grid background -->
+    <div :class="$style.dotBg" />
+
     <!-- Message list -->
     <div ref="scrollContainerRef" :class="$style.messages">
+      <div :class="$style.messagesInner">
       <div v-if="messages.length === 0" :class="$style.empty">
         <p :class="$style.emptyTitle">Workflow Agent</p>
         <p :class="$style.emptyHint">Ask the agent to create, edit, or manage n8n workflows.</p>
@@ -111,10 +190,16 @@ onMounted(scrollToBottom)
 
         <!-- Assistant message -->
         <div v-else-if="msg.role === 'assistant'" :class="$style.assistantMsg">
-          <div
-            :class="$style.assistantBubble"
-            v-html="renderMarkdown(msg.content)"
-          />
+          <div :class="$style.assistantContent">
+            <div
+              :class="$style.markdown"
+              v-html="renderMarkdown(msg.content)"
+            />
+            <span
+              v-if="isStreaming && msg === messages[messages.length - 1]"
+              :class="$style.cursor"
+            />
+          </div>
         </div>
 
         <!-- Tool call -->
@@ -122,8 +207,16 @@ onMounted(scrollToBottom)
           <ToolCallCard
             v-if="getToolCallForMessage(msg.meta?.toolCallId as string)"
             :tool-call="getToolCallForMessage(msg.meta?.toolCallId as string)!"
-            @preview="handleToolPreview"
+            @preview="handlePopOut"
           />
+          <!-- Inline workflow preview card -->
+          <template v-if="getInlinePreview(msg.meta?.toolCallId as string)" >
+            <WorkflowInlineCard
+              v-bind="getInlinePreview(msg.meta?.toolCallId as string)!"
+              :is-panel-active="sessionStore.isPanelOpen && sessionStore.panelWorkflowId === getInlinePreview(msg.meta?.toolCallId as string)!.workflowId"
+              @pop-out="handlePopOut"
+            />
+          </template>
         </div>
 
         <!-- System/error message -->
@@ -135,7 +228,7 @@ onMounted(scrollToBottom)
       <!-- Inline tool calls not tied to messages -->
       <template v-for="tc in toolCalls" :key="tc.id">
         <div v-if="tc.status === 'running' || tc.status === 'pending'" :class="$style.toolMsg">
-          <ToolCallCard :tool-call="tc" @preview="handleToolPreview" />
+          <ToolCallCard :tool-call="tc" @preview="handlePopOut" />
         </div>
       </template>
 
@@ -148,36 +241,41 @@ onMounted(scrollToBottom)
         />
       </div>
 
-      <!-- Running indicator -->
-      <div v-if="isRunning && !pendingApproval" :class="$style.runningIndicator">
-        <IonSpinner name="dots" :class="$style.runningSpinner" />
+      <!-- Waiting for first token -->
+      <div v-if="isRunning && !pendingApproval && !isStreaming" :class="$style.thinkingRow">
+        <span :class="$style.thinkingDots">
+          <span /><span /><span />
+        </span>
+      </div>
       </div>
     </div>
 
     <!-- Input area -->
     <div :class="$style.inputArea">
-      <div v-if="!hasLlmConfig" :class="$style.configHint">
-        <ion-icon :icon="settingsOutline" :class="$style.configIcon" />
-        Configure AI in Settings &gt; AI/Agent
-      </div>
-      <div :class="$style.inputRow">
-        <textarea
-          ref="textareaRef"
-          v-model="inputText"
-          :class="$style.textarea"
-          :disabled="isRunning || !hasLlmConfig"
-          placeholder="Describe a workflow to create or modify..."
-          rows="1"
-          @input="handleInput"
-          @keydown="handleKeydown"
-        />
-        <button
-          :class="$style.sendBtn"
-          :disabled="!canSend"
-          @click="send"
-        >
-          <ion-icon :icon="sendOutline" />
-        </button>
+      <div :class="$style.inputInner">
+        <div v-if="!hasLlmConfig" :class="$style.configHint">
+          <ion-icon :icon="settingsOutline" :class="$style.configIcon" />
+          Configure AI in Settings > AI/Agent
+        </div>
+        <div :class="$style.inputRow">
+          <textarea
+            ref="textareaRef"
+            v-model="inputText"
+            :class="$style.textarea"
+            :disabled="isRunning || !hasLlmConfig"
+            placeholder="Describe a workflow to create or modify..."
+            rows="1"
+            @input="handleInput"
+            @keydown="handleKeydown"
+          />
+          <button
+            :class="$style.sendBtn"
+            :disabled="!canSend"
+            @click="send"
+          >
+            <ion-icon :icon="sendOutline" />
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -189,15 +287,33 @@ onMounted(scrollToBottom)
   display: flex;
   flex-direction: column;
   background: var(--n8n-desk--content-bg, var(--color--background));
+  position: relative;
+}
+
+.dotBg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, var(--n8n-desk--grid-dot-color, var(--canvas--dot--color, rgba(0, 0, 0, 0.12))) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
 .messages {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.messagesInner {
+  width: 90%;
+  max-width: 960px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .empty {
@@ -212,13 +328,13 @@ onMounted(scrollToBottom)
 .emptyTitle {
   font-size: 16px;
   font-weight: 600;
-  color: var(--color--text-dark, #333);
+  color: var(--color--text--shade-1);
   margin: 0 0 4px;
 }
 
 .emptyHint {
   font-size: 13px;
-  color: var(--color--text-light, #999);
+  color: var(--color--text--tint-1);
   margin: 0;
 }
 
@@ -244,12 +360,13 @@ onMounted(scrollToBottom)
   justify-content: flex-start;
 }
 
-.assistantBubble {
-  max-width: 85%;
-  padding: 10px 14px;
-  border-radius: 16px 16px 16px 4px;
-  background: var(--n8n-desk--surface-bg, var(--color--foreground));
-  color: var(--color--text-dark, #333);
+.assistantContent {
+  max-width: 90%;
+  position: relative;
+}
+
+.markdown {
+  color: var(--color--text--shade-1);
   font-size: 14px;
   line-height: 1.6;
   word-break: break-word;
@@ -259,25 +376,101 @@ onMounted(scrollToBottom)
     &:last-child { margin-bottom: 0; }
   }
 
+  :deep(ul),
+  :deep(ol) {
+    margin: 4px 0 8px;
+    padding-left: 20px;
+
+    li {
+      margin-bottom: 2px;
+    }
+  }
+
+  :deep(strong) {
+    font-weight: 600;
+    color: var(--color--text--shade-1);
+  }
+
+  :deep(a) {
+    color: var(--color--primary);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
   :deep(code) {
     font-size: 12px;
-    background: var(--n8n-desk--content-bg, var(--color--background));
-    padding: 2px 4px;
-    border-radius: 3px;
+    font-family: 'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace;
+    background: var(--n8n-desk--surface-bg, var(--color--foreground));
+    color: var(--color--text);
+    padding: 2px 5px;
+    border-radius: 4px;
   }
 
   :deep(pre) {
-    background: var(--n8n-desk--content-bg, var(--color--background));
-    padding: 8px;
-    border-radius: 4px;
+    background: var(--n8n-desk--surface-bg, var(--color--foreground));
+    padding: 12px;
+    border-radius: 6px;
     overflow-x: auto;
     margin: 8px 0;
+    border: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground));
 
     code {
       background: none;
       padding: 0;
+      border-radius: 0;
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--color--text);
     }
   }
+
+  :deep(blockquote) {
+    margin: 8px 0;
+    padding: 4px 12px;
+    border-left: 3px solid var(--color--text--tint-1);
+    color: var(--color--text);
+  }
+
+  :deep(hr) {
+    border: none;
+    border-top: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+    margin: 12px 0;
+  }
+
+  :deep(h1),
+  :deep(h2),
+  :deep(h3),
+  :deep(h4) {
+    color: var(--color--text--shade-1);
+    margin: 12px 0 6px;
+    font-weight: 600;
+
+    &:first-child { margin-top: 0; }
+  }
+
+  :deep(h1) { font-size: 18px; }
+  :deep(h2) { font-size: 16px; }
+  :deep(h3) { font-size: 15px; }
+  :deep(h4) { font-size: 14px; }
+}
+
+// Blinking cursor for streaming
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 16px;
+  background: var(--color--primary, #ff6d5a);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 0.8s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .toolMsg {
@@ -287,7 +480,7 @@ onMounted(scrollToBottom)
 .systemMsg {
   text-align: center;
   font-size: 12px;
-  color: var(--color--text-light, #999);
+  color: var(--color--text--tint-1);
   padding: 4px 0;
 }
 
@@ -295,22 +488,52 @@ onMounted(scrollToBottom)
   color: var(--color--danger, #ef4444);
 }
 
-.runningIndicator {
+// Thinking dots animation (before first token arrives)
+.thinkingRow {
   display: flex;
   align-items: center;
   padding: 4px 0;
 }
 
-.runningSpinner {
-  width: 24px;
-  height: 24px;
-  --color: var(--color--text-light, #999);
+.thinkingDots {
+  display: inline-flex;
+  gap: 4px;
+
+  span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color--text--tint-1);
+    animation: thinking 1.4s infinite ease-in-out both;
+
+    &:nth-child(1) { animation-delay: -0.32s; }
+    &:nth-child(2) { animation-delay: -0.16s; }
+  }
+}
+
+@keyframes thinking {
+  0%, 80%, 100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .inputArea {
   flex-shrink: 0;
-  border-top: 1px solid var(--n8n-desk--surface-bg, var(--color--foreground));
+  border-top: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground));
   padding: 8px 12px 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.inputInner {
+  width: 90%;
+  max-width: 960px;
+  margin: 0 auto;
 }
 
 .configHint {
@@ -335,14 +558,14 @@ onMounted(scrollToBottom)
 .textarea {
   flex: 1;
   resize: none;
-  border: 1px solid var(--n8n-desk--surface-bg, var(--color--foreground));
+  border: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground));
   border-radius: 12px;
   padding: 10px 14px;
   font-size: 14px;
   font-family: inherit;
   line-height: 1.5;
   background: var(--n8n-desk--surface-bg, var(--color--foreground));
-  color: var(--color--text-dark, #333);
+  color: var(--color--text--shade-1);
   outline: none;
   max-height: 150px;
   overflow-y: auto;
@@ -357,7 +580,7 @@ onMounted(scrollToBottom)
   }
 
   &::placeholder {
-    color: var(--color--text-light, #999);
+    color: var(--color--text--tint-1);
   }
 }
 

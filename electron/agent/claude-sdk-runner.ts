@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import os from 'os'
 import type {
   AgentRunner,
   AgentRunnerConfig,
@@ -80,16 +81,17 @@ export class ClaudeSdkRunner implements AgentRunner {
       }
     }
 
-    // canUseTool callback — intercept destructive tools for approval
+    // canUseTool callback — intercept destructive tools for approval.
+    // Must return the full PermissionResult type the SDK expects.
     const interruptTools = new Set(config.interruptOnTools ?? [...DESTRUCTIVE_TOOLS])
-    const canUseTool = async (
-      toolName: string,
-      input: Record<string, unknown>,
-      options: { signal: AbortSignal },
-    ): Promise<{ behavior: 'allow' } | { behavior: 'deny'; message: string }> => {
+    const canUseTool: import('@anthropic-ai/claude-agent-sdk').CanUseTool = async (
+      toolName,
+      input,
+      options,
+    ) => {
       // Only intercept tools that require approval
       if (!interruptTools.has(toolName)) {
-        return { behavior: 'allow' }
+        return { behavior: 'allow' as const, updatedInput: input }
       }
 
       const approvalId = randomUUID()
@@ -125,9 +127,9 @@ export class ClaudeSdkRunner implements AgentRunner {
       })
 
       if (decision === 'approve') {
-        return { behavior: 'allow' }
+        return { behavior: 'allow' as const, updatedInput: input }
       }
-      return { behavior: 'deny', message: `User rejected ${toolName}` }
+      return { behavior: 'deny' as const, message: `User rejected ${toolName}` }
     }
 
     // Configure the MCP server pointing to n8n's endpoint
@@ -140,7 +142,7 @@ export class ClaudeSdkRunner implements AgentRunner {
           model: config.llmConfig.model,
           systemPrompt: config.systemPrompt,
           abortController,
-          permissionMode: 'default',
+          permissionMode: 'acceptEdits',
           canUseTool,
           mcpServers: {
             'n8n': {
@@ -152,7 +154,14 @@ export class ClaudeSdkRunner implements AgentRunner {
             },
           },
           // Disable all built-in tools — we only want MCP tools
-          allowedTools: [],
+          tools: [],
+          // Set working directory explicitly to avoid undefined path errors
+          cwd: os.homedir(),
+          // Pass API key to the spawned Claude Code subprocess
+          env: {
+            ...process.env,
+            ...(config.llmConfig.apiKey ? { ANTHROPIC_API_KEY: config.llmConfig.apiKey } : {}),
+          },
         },
       })
 
@@ -248,6 +257,8 @@ export class ClaudeSdkRunner implements AgentRunner {
   ): AgentStreamEvent[] {
     const events: AgentStreamEvent[] = []
 
+    console.log('[n8n-desk SDK msg]', msg.type, msg.type === 'user' ? JSON.stringify({ parent_tool_use_id: (msg as Record<string, unknown>).parent_tool_use_id, tool_use_result: !!(msg as Record<string, unknown>).tool_use_result, hasMessage: !!(msg as Record<string, unknown>).message }).slice(0, 300) : '')
+
     switch (msg.type) {
       case 'assistant': {
         // BetaMessage contains content blocks
@@ -308,9 +319,66 @@ export class ClaudeSdkRunner implements AgentRunner {
         break
       }
 
+      case 'user': {
+        // Tool results come back as 'user' messages.
+        // parent_tool_use_id may be null — extract tool_use_id from content blocks instead.
+        const userMsg = msg as import('@anthropic-ai/claude-agent-sdk').SDKUserMessage
+
+        // Try to find the tool_use_id and result content
+        let toolUseId: string | null = userMsg.parent_tool_use_id
+        let resultContent: unknown = userMsg.tool_use_result
+
+        // Extract from message content blocks (tool_result blocks have tool_use_id)
+        if (userMsg.message?.content && Array.isArray(userMsg.message.content)) {
+          for (const block of userMsg.message.content) {
+            const b = block as Record<string, unknown>
+            if (b.type === 'tool_result') {
+              if (!toolUseId && typeof b.tool_use_id === 'string') {
+                toolUseId = b.tool_use_id
+              }
+              if (!resultContent) {
+                resultContent = b.content ?? b.output
+              }
+              break
+            }
+          }
+        }
+
+        // If we still don't have a result but tool_use_result exists, use it
+        if (!resultContent && userMsg.tool_use_result !== undefined) {
+          resultContent = userMsg.tool_use_result
+        }
+
+        if (toolUseId) {
+          const resultStr = typeof resultContent === 'string'
+            ? resultContent
+            : JSON.stringify(resultContent ?? '')
+
+          // Check if the result indicates an error
+          const isError = typeof resultContent === 'string'
+            && (resultContent.includes('"error"') || resultContent.includes('Error'))
+
+          events.push({
+            type: 'tool_call_result',
+            sessionId,
+            data: {
+              id: toolUseId,
+              name: '',
+              result: resultStr,
+              success: !isError,
+              ...(isError ? { error: resultStr } : {}),
+            },
+          })
+        } else if (resultContent !== undefined) {
+          // Tool result without a matching tool_use_id — still emit with a generated id
+          // so the UI at least shows something
+          console.log('[n8n-desk] Tool result without tool_use_id, content:', JSON.stringify(resultContent).slice(0, 200))
+        }
+        break
+      }
+
       case 'tool_progress': {
-        // Tool is still executing — we don't emit specific events for this,
-        // but it signals the tool is working
+        // Tool is still executing — no event needed, spinner is already showing
         break
       }
 

@@ -10,6 +10,7 @@ export function useWorkflowAgent() {
   const pendingApproval = computed(() => sessionStore.pendingApproval)
   const activeSession = computed(() => sessionStore.activeSession)
   const toolCalls = computed(() => sessionStore.toolCalls)
+  const previewData = computed(() => sessionStore.previewData)
 
   let removeEventListener: (() => void) | null = null
 
@@ -101,6 +102,7 @@ export function useWorkflowAgent() {
     pendingApproval,
     activeSession,
     toolCalls,
+    previewData,
     sendMessage,
     stopAgent,
     approveAction,

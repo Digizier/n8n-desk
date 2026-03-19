@@ -8,14 +8,27 @@ const LLM_CONFIG_PATH = path.join(BASE_DIR, 'llm.json')
 
 // --- LLM Config Persistence ---
 
-interface LlmConfigFile {
-  defaultProvider: string
-  providers: Record<string, {
-    model: string
-    apiKey?: string
-    baseUrl?: string
-  }>
+/**
+ * The settings UI saves llm.json in one of two shapes:
+ *
+ * ClaudeSdkConfig:  { backend: 'claude-sdk', apiKey, model }
+ * DeepAgentsConfig: { backend: 'deep-agents', provider, model, apiKey?, ollamaBaseUrl? }
+ */
+interface ClaudeSdkConfigFile {
+  backend: 'claude-sdk'
+  apiKey: string
+  model: string
 }
+
+interface DeepAgentsConfigFile {
+  backend: 'deep-agents'
+  provider: 'anthropic' | 'openai' | 'ollama'
+  model: string
+  apiKey?: string
+  ollamaBaseUrl?: string
+}
+
+type LlmConfigFile = ClaudeSdkConfigFile | DeepAgentsConfigFile
 
 /**
  * Read LLM configuration from ~/.n8n-desk/llm.json.
@@ -36,18 +49,24 @@ export async function readLlmConfig(): Promise<LlmConfigFile | null> {
  */
 export async function resolveLlmConfig(): Promise<LlmProviderConfig | null> {
   const config = await readLlmConfig()
-  if (!config?.defaultProvider || !config.providers?.[config.defaultProvider]) {
+  if (!config?.backend || !config.model) {
     return null
   }
 
-  const provider = config.defaultProvider as LlmProviderConfig['provider']
-  const providerConfig = config.providers[config.defaultProvider]
+  if (config.backend === 'claude-sdk') {
+    return {
+      provider: 'anthropic',
+      model: config.model,
+      apiKey: config.apiKey,
+    }
+  }
 
+  // deep-agents backend
   return {
-    provider,
-    model: providerConfig.model,
-    apiKey: providerConfig.apiKey,
-    baseUrl: providerConfig.baseUrl,
+    provider: config.provider,
+    model: config.model,
+    apiKey: config.apiKey,
+    baseUrl: config.provider === 'ollama' ? config.ollamaBaseUrl : undefined,
   }
 }
 

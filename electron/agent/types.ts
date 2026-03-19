@@ -44,6 +44,15 @@ export interface AgentStreamDone extends AgentStreamEventBase {
   data: { reason: 'completed' | 'cancelled' | 'error' }
 }
 
+export interface AgentStreamWorkflowPreview extends AgentStreamEventBase {
+  type: 'workflow_preview'
+  data: {
+    workflowId: string
+    name: string
+    workflow: Record<string, unknown>
+  }
+}
+
 export type AgentStreamEvent =
   | AgentStreamTextChunk
   | AgentStreamToolCallStart
@@ -53,6 +62,7 @@ export type AgentStreamEvent =
   | AgentStreamTodoUpdate
   | AgentStreamError
   | AgentStreamDone
+  | AgentStreamWorkflowPreview
 
 // --- LLM Configuration ---
 

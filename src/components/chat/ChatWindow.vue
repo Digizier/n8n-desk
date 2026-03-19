@@ -230,13 +230,13 @@ async function handleRegenerateMessage(messageId: string): Promise<void> {
   margin: 0 0 var(--spacing-xs, 8px);
   font-size: var(--font-size-l, 18px);
   font-weight: var(--font-weight-bold, 600);
-  color: var(--color--text-dark, #333);
+  color: var(--color--text--shade-1);
 }
 
 .emptyDescription {
   margin: 0;
   font-size: var(--font-size-s, 14px);
-  color: var(--color--text-light, #999);
+  color: var(--color--text--tint-1);
   max-width: 300px;
 }
 </style>

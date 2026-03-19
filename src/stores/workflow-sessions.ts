@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import type { SessionMeta, SessionMessage } from '@/types/session'
-import type { AgentEvent, AgentToolCall, AgentApprovalRequiredEvent } from '@/types/agent'
+import type { AgentEvent, AgentToolCall, AgentApprovalRequiredEvent, WorkflowPreviewData, WorkflowJson } from '@/types/agent'
 import { localStorageService } from '@/services/local-storage'
 
 function sessionsDir(instanceId: string): string {
@@ -36,6 +36,11 @@ export const useWorkflowSessionsStore = defineStore('workflow-sessions', () => {
   const pendingApproval = ref<AgentApprovalRequiredEvent['data'] | null>(null)
   const isAgentRunning = ref(false)
   const toolCalls = ref<AgentToolCall[]>([])
+  const previewData = ref<WorkflowPreviewData | null>(null)
+  const isPanelOpen = ref(false)
+  const panelWorkflowId = ref<string | null>(null)
+  /** Tracks the last-seen version of each workflow by ID, for diff previews */
+  const workflowHistory = ref<Map<string, WorkflowJson>>(new Map())
 
   let currentInstanceId: string | null = null
 
@@ -128,6 +133,10 @@ export const useWorkflowSessionsStore = defineStore('workflow-sessions', () => {
     )
     pendingApproval.value = null
     toolCalls.value = []
+    previewData.value = null
+    isPanelOpen.value = false
+    panelWorkflowId.value = null
+    workflowHistory.value.clear()
   }
 
   /**
@@ -243,6 +252,26 @@ export const useWorkflowSessionsStore = defineStore('workflow-sessions', () => {
         }
         break
       }
+      case 'workflow_preview': {
+        const wfId = event.data.workflowId
+        const previousVersion = wfId ? workflowHistory.value.get(wfId) : undefined
+        const newData: WorkflowPreviewData = {
+          workflowId: wfId,
+          name: event.data.name,
+          workflow: event.data.workflow,
+          workflowBefore: previousVersion,
+        }
+        // Store this version as the latest for future diffs
+        if (wfId) {
+          workflowHistory.value.set(wfId, structuredClone(event.data.workflow))
+        }
+        // If panel is open, update it live; otherwise inline cards handle display
+        if (isPanelOpen.value) {
+          previewData.value = newData
+          panelWorkflowId.value = newData.workflowId
+        }
+        break
+      }
       case 'todo_update': {
         // Todo updates are informational — could be surfaced in UI
         break
@@ -274,6 +303,18 @@ export const useWorkflowSessionsStore = defineStore('workflow-sessions', () => {
     }
   }
 
+  function openPanel(data: WorkflowPreviewData): void {
+    previewData.value = data
+    isPanelOpen.value = true
+    panelWorkflowId.value = data.workflowId
+  }
+
+  function closePanel(): void {
+    isPanelOpen.value = false
+    panelWorkflowId.value = null
+    previewData.value = null
+  }
+
   function reset(): void {
     sessions.value = []
     activeSessionId.value = null
@@ -281,6 +322,10 @@ export const useWorkflowSessionsStore = defineStore('workflow-sessions', () => {
     pendingApproval.value = null
     isAgentRunning.value = false
     toolCalls.value = []
+    previewData.value = null
+    isPanelOpen.value = false
+    panelWorkflowId.value = null
+    workflowHistory.value.clear()
     currentInstanceId = null
   }
 
@@ -292,12 +337,18 @@ export const useWorkflowSessionsStore = defineStore('workflow-sessions', () => {
     pendingApproval,
     isAgentRunning,
     toolCalls,
+    previewData,
+    isPanelOpen,
+    panelWorkflowId,
+    workflowHistory,
     hydrate,
     createSession,
     deleteSession,
     selectSession,
     appendMessage,
     handleAgentEvent,
+    openPanel,
+    closePanel,
     reset,
   }
 })

@@ -122,7 +122,7 @@ const instanceLabel = computed(() => instancesStore.activeInstance?.label ?? 'n8
   gap: 12px;
   padding: 8px 16px;
   background-color: var(--color--warning);
-  color: var(--color--text-dark);
+  color: var(--color--text--shade-1);
   font-size: var(--font-size--2xs);
   cursor: pointer;
 }

@@ -2,6 +2,9 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { IonCard, IonCardHeader, IonCardTitle, IonCardContent } from '@ionic/vue'
 
+// Import the n8n-demo web component so it self-registers as a custom element
+import '@n8n_io/n8n-demo-component/n8n-demo.bundled.js'
+
 export interface WorkflowJson {
   nodes?: Array<{ name?: string; type?: string }>
   connections?: Record<string, unknown>
@@ -102,6 +105,34 @@ watch(isVisible, (vis) => {
   }
 })
 
+// Inject styles into n8n-demo shadow DOM to fill container
+function injectShadowStyles() {
+  const el = containerRef.value?.querySelector('n8n-demo')
+  if (!el?.shadowRoot) return
+  // Avoid duplicate injection
+  if (el.shadowRoot.querySelector('[data-n8n-desk-fill]')) return
+  const style = document.createElement('style')
+  style.setAttribute('data-n8n-desk-fill', '')
+  style.textContent = `
+    :host { display: block; height: 100%; }
+    .embedded_workflow { height: 100%; display: flex; flex-direction: column; }
+    .canvas-container { flex: 1; min-height: 0; }
+    .embedded_workflow_iframe { width: 100% !important; height: 100% !important; min-height: 0 !important; border: none !important; border-radius: 0 !important; }
+  `
+  el.shadowRoot.appendChild(style)
+}
+
+watch(isRendered, (rendered) => {
+  if (rendered) {
+    // Shadow root may not be ready immediately — wait a tick
+    requestAnimationFrame(() => {
+      injectShadowStyles()
+      // Retry once more in case Lit hasn't rendered yet
+      setTimeout(injectShadowStyles, 200)
+    })
+  }
+})
+
 function handleClick() {
   if (props.compact) {
     emit('click')
@@ -146,11 +177,11 @@ onBeforeUnmount(() => {
       :workflowbefore="mode === 'diff' ? workflowBeforeString : undefined"
       :mode="mode"
       :theme="currentTheme"
-      :frame="compact ? 'false' : 'true'"
+      frame="false"
       tidyup="true"
-      :disableinteractivity="compact || !interactive ? 'true' : 'false'"
-      :clicktointeract="compact ? 'true' : 'false'"
-      :collapseformobile="compact ? 'true' : 'false'"
+      :disableinteractivity="!interactive ? 'true' : 'false'"
+      clicktointeract="false"
+      collapseformobile="false"
     />
   </div>
 </template>
@@ -158,19 +189,16 @@ onBeforeUnmount(() => {
 <style lang="scss" module>
 .container {
   width: 100%;
+  height: 100%;
   min-height: 200px;
 
   &.compact {
-    height: 200px;
-    cursor: pointer;
+    height: 100%;
     overflow: hidden;
-    border-radius: 8px;
-    border: 1px solid var(--n8n-desk--surface-bg, var(--color--foreground));
 
     n8n-demo {
       height: 100%;
       width: 100%;
-      pointer-events: none;
     }
   }
 
@@ -197,6 +225,6 @@ onBeforeUnmount(() => {
 
 .nodeCount {
   font-size: 12px;
-  color: var(--color--text-light, #999);
+  color: var(--color--text--tint-1);
 }
 </style>

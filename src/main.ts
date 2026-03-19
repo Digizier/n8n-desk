@@ -8,6 +8,7 @@ import { useInstancesStore } from './stores/instances'
 import { useAuthStore } from './stores/auth'
 import { useTheme } from './composables/useTheme'
 import { useChatStore } from './stores/chat'
+import { useWorkflowSessionsStore } from './stores/workflow-sessions'
 import { n8nHtml } from './directives/n8n-html'
 import { i18n } from './i18n'
 
@@ -26,9 +27,10 @@ const app = createApp(App)
 // Hydrate stores BEFORE mounting the app so the router guard
 // sees the correct state on the very first navigation.
 async function bootstrap() {
-  // 1. Hydrate settings (theme, locale, default instance)
+  // 1. Hydrate settings (theme, locale, default instance, LLM config)
   const settingsStore = useSettingsStore()
   await settingsStore.hydrate()
+  await settingsStore.hydrateLlm()
   const { init } = useTheme()
   init(settingsStore.theme)
 
@@ -44,6 +46,10 @@ async function bootstrap() {
     // 4. Hydrate chat store (session index) for the active instance
     const chatStore = useChatStore()
     await chatStore.hydrate()
+
+    // 5. Hydrate workflow sessions store for the active instance
+    const workflowSessionsStore = useWorkflowSessionsStore()
+    await workflowSessionsStore.hydrate(instancesStore.activeInstanceId)
   }
 
   // Mark Electron for CSS safe area handling (macOS traffic lights)

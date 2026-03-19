@@ -43,8 +43,9 @@ const PRESET_COLORS = [
 ]
 
 // Reset draft when modal opens
-watch(() => props.isOpen, (open) => {
+watch(() => props.isOpen, async (open) => {
   if (open) {
+    await settingsStore.hydrateLlm()
     draft.theme = settingsStore.theme
     draft.locale = settingsStore.locale
     draft.instances = instancesStore.instances.map((i) => ({

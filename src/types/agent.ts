@@ -44,6 +44,15 @@ export interface AgentDoneEvent extends AgentEventBase {
   data: { reason: 'completed' | 'cancelled' | 'error' }
 }
 
+export interface AgentWorkflowPreviewEvent extends AgentEventBase {
+  type: 'workflow_preview'
+  data: {
+    workflowId: string
+    name: string
+    workflow: WorkflowJson
+  }
+}
+
 export type AgentEvent =
   | AgentTextChunkEvent
   | AgentToolCallStartEvent
@@ -53,6 +62,7 @@ export type AgentEvent =
   | AgentTodoUpdateEvent
   | AgentErrorEvent
   | AgentDoneEvent
+  | AgentWorkflowPreviewEvent
 
 // --- Agent Todos ---
 
@@ -101,5 +111,6 @@ export interface WorkflowPreviewData {
   workflowId: string
   name: string
   workflow: WorkflowJson
+  workflowBefore?: WorkflowJson
   theme?: 'light' | 'dark'
 }

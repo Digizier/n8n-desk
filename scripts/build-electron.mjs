@@ -10,7 +10,7 @@ await build({
   platform: 'node',
   format: 'cjs',
   target: 'node20',
-  external: ['electron'],
+  external: ['electron', '@anthropic-ai/claude-agent-sdk'],
   sourcemap: true,
   logLevel: 'info',
 })

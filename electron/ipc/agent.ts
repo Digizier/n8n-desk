@@ -1,10 +1,11 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, safeStorage } from 'electron'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
 import type { AgentStreamEvent, AgentRunnerConfig, LlmProviderConfig } from '../agent/types'
 import { type AgentRunner } from '../agent/types'
 import { createAgentRunner, resolveLlmConfig } from '../agent/factory'
+import { refreshTokens } from '../oauth'
 
 const BASE_DIR = path.join(os.homedir(), '.n8n-desk')
 
@@ -29,6 +30,63 @@ async function readJson<T>(filePath: string): Promise<T | null> {
   }
 }
 
+async function writeJson(filePath: string, data: unknown): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 })
+  await fs.writeFile(filePath, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 })
+}
+
+interface StoredTokens {
+  access_token: string
+  refresh_token: string
+}
+
+async function readTokens(instanceId: string): Promise<StoredTokens | null> {
+  try {
+    const filePath = path.join(BASE_DIR, 'instances', instanceId, 'tokens.enc')
+    const data = await fs.readFile(filePath)
+
+    let jsonStr: string
+    if (safeStorage.isEncryptionAvailable()) {
+      jsonStr = safeStorage.decryptString(data)
+    } else {
+      jsonStr = data.toString('utf-8')
+    }
+
+    return JSON.parse(jsonStr) as StoredTokens
+  } catch {
+    return null
+  }
+}
+
+async function storeTokens(instanceId: string, accessToken: string, refreshToken: string): Promise<void> {
+  const tokenData = JSON.stringify({ access_token: accessToken, refresh_token: refreshToken })
+  const filePath = path.join(BASE_DIR, 'instances', instanceId, 'tokens.enc')
+  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 })
+
+  if (safeStorage.isEncryptionAvailable()) {
+    const encrypted = safeStorage.encryptString(tokenData)
+    await fs.writeFile(filePath, encrypted, { mode: 0o600 })
+  } else {
+    await fs.writeFile(filePath, tokenData, { encoding: 'utf-8', mode: 0o600 })
+  }
+}
+
+interface AuthMetadata {
+  clientId: string
+  scopes: string[]
+  expiresAt: string
+  userRole: string
+  serverMetadata: {
+    token_endpoint: string
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
+/**
+ * Read the active instance config and get a valid access token.
+ * Auto-refreshes the token if it has expired.
+ */
 async function readActiveInstanceConfig(): Promise<{ url: string; accessToken: string } | null> {
   const config = await readJson<{ defaultInstanceId?: string }>(path.join(BASE_DIR, 'config.json'))
   if (!config?.defaultInstanceId) return null
@@ -37,15 +95,117 @@ async function readActiveInstanceConfig(): Promise<{ url: string; accessToken: s
   const instance = await readJson<{ url: string }>(
     path.join(BASE_DIR, 'instances', instanceId, 'instance.json')
   )
-  const auth = await readJson<{ accessToken?: string }>(
+  if (!instance?.url) return null
+
+  // Read actual tokens from encrypted storage
+  let tokens = await readTokens(instanceId)
+  if (!tokens?.access_token) return null
+
+  // Check if token is expired and refresh if needed
+  const authMeta = await readJson<AuthMetadata>(
     path.join(BASE_DIR, 'instances', instanceId, 'auth.json')
   )
+  if (authMeta?.expiresAt) {
+    const expiresAt = new Date(authMeta.expiresAt).getTime()
+    const now = Date.now()
+    // Refresh if expired or within 60 seconds of expiry
+    if (now >= expiresAt - 60_000) {
+      try {
+        console.log('[n8n-desk] Access token expired, refreshing...')
+        const tokenResponse = await refreshTokens(
+          authMeta.serverMetadata as Parameters<typeof refreshTokens>[0],
+          authMeta.clientId,
+          tokens.refresh_token,
+        )
+        // Store new tokens
+        await storeTokens(instanceId, tokenResponse.access_token, tokenResponse.refresh_token)
+        // Update expiry in auth.json
+        authMeta.expiresAt = new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString()
+        await writeJson(path.join(BASE_DIR, 'instances', instanceId, 'auth.json'), authMeta)
+        tokens = { access_token: tokenResponse.access_token, refresh_token: tokenResponse.refresh_token }
+        console.log('[n8n-desk] Token refreshed successfully')
+      } catch (err) {
+        console.error('[n8n-desk] Token refresh failed:', err)
+        // Return the expired token anyway — the MCP server will return 401
+        // and the user will need to re-authenticate
+      }
+    }
+  }
 
-  if (!instance?.url) return null
+  console.log('[n8n-desk] Instance config loaded, token present:', !!tokens.access_token, 'length:', tokens.access_token.length)
   return {
     url: instance.url,
-    accessToken: auth?.accessToken ?? '',
+    accessToken: tokens.access_token,
   }
+}
+
+/**
+ * Extract workflow JSON from an MCP tool result, if present.
+ * Tool results from create_workflow_from_code, get_workflow_details, validate_workflow, etc.
+ * may contain workflow JSON with nodes and connections — either at the top level or nested.
+ */
+function extractWorkflowFromResult(result: unknown): { workflowId: string; name: string; workflow: Record<string, unknown> } | null {
+  if (!result || typeof result !== 'object') {
+    // Try parsing if it's a JSON string
+    if (typeof result === 'string') {
+      try {
+        return extractWorkflowFromResult(JSON.parse(result))
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+
+  // MCP content block array: [{ type: "text", text: "..." }]
+  if (Array.isArray(result)) {
+    for (const block of result) {
+      if (block && typeof block === 'object' && (block as Record<string, unknown>).type === 'text') {
+        const extracted = extractWorkflowFromResult((block as Record<string, unknown>).text)
+        if (extracted) return extracted
+      }
+    }
+    return null
+  }
+
+  const r = result as Record<string, unknown>
+
+  // Direct shape: { nodes: [...], connections: {...} }
+  if (Array.isArray(r.nodes) && r.connections) {
+    return {
+      workflowId: (r.id as string) ?? '',
+      name: (r.name as string) ?? 'Workflow',
+      workflow: r,
+    }
+  }
+
+  // Nested: { workflow: { nodes: [...], connections: {...} } }
+  if (typeof r.workflow === 'object' && r.workflow !== null) {
+    const w = r.workflow as Record<string, unknown>
+    if (Array.isArray(w.nodes)) {
+      return {
+        workflowId: (w.id as string) ?? '',
+        name: (w.name as string) ?? 'Workflow',
+        workflow: w,
+      }
+    }
+  }
+
+  // MCP result shape: { structuredContent: { workflow: { nodes, connections } } }
+  if (typeof r.structuredContent === 'object' && r.structuredContent !== null) {
+    return extractWorkflowFromResult(r.structuredContent)
+  }
+
+  // MCP result shape: { content: "stringified JSON" }
+  if (typeof r.content === 'string' && !r.structuredContent) {
+    try {
+      return extractWorkflowFromResult(JSON.parse(r.content))
+    } catch {
+      // not JSON
+    }
+  }
+
+  return null
 }
 
 async function appendToSessionJsonl(sessionId: string, event: AgentStreamEvent): Promise<void> {
@@ -233,8 +393,22 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
             if (active.stopped) break
             mainWindow.webContents.send('agent:event', event)
             await appendToSessionJsonl(sessionId, event)
+
+            // Auto-emit workflow preview when a tool result contains workflow JSON
+            if (event.type === 'tool_call_result' && event.data.success) {
+              const extracted = extractWorkflowFromResult(event.data.result)
+              if (extracted) {
+                const previewEvent: AgentStreamEvent = {
+                  type: 'workflow_preview',
+                  sessionId,
+                  data: extracted,
+                }
+                mainWindow.webContents.send('agent:event', previewEvent)
+              }
+            }
           }
         } catch (err) {
+          console.error('[n8n-desk agent error]', err)
           const errMessage = err instanceof Error ? err.message : String(err)
           const errorEvent: AgentStreamEvent = {
             sessionId,
