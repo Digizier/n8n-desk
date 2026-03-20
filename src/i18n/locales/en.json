@@ -260,6 +260,33 @@
       "edit": "Edit server",
       "delete": "Delete server",
       "requiresApproval": "Requires approval"
+    },
+    "addServer": {
+      "title": "Add MCP Server",
+      "titleEdit": "Edit MCP Server",
+      "name": "Name",
+      "namePlaceholder": "My MCP Server",
+      "url": "Server URL",
+      "urlPlaceholder": "https://mcp.example.com/sse",
+      "urlRequired": "Server URL is required",
+      "urlInvalid": "Enter a valid HTTP or HTTPS URL",
+      "description": "Description",
+      "descriptionPlaceholder": "What does this server provide?",
+      "headers": "Headers",
+      "headersHint": "Add authentication or custom headers. Values are stored securely in the OS keychain.",
+      "headerName": "Header name",
+      "headerValue": "Header value",
+      "addHeader": "Add header",
+      "removeHeader": "Remove header",
+      "requireApproval": "Require approval",
+      "requireApprovalHint": "Ask for confirmation before executing tools from this server",
+      "testConnection": "Test Connection",
+      "testFailed": "Connection failed. Check the URL and try again.",
+      "toolsDiscovered": "Discovered {count} tool | Discovered {count} tools",
+      "add": "Add Server",
+      "save": "Save",
+      "cancel": "Cancel",
+      "saveFailed": "Failed to save server. Please try again."
     }
   },
   "views": {
