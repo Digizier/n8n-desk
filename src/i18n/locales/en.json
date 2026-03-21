@@ -312,6 +312,31 @@
       "auto": "Auto",
       "manual": "Manual",
       "sourceUser": "User"
+    },
+    "skillEditor": {
+      "title": "Create Skill",
+      "titleEdit": "Edit Skill",
+      "name": "Name",
+      "namePlaceholder": "my-skill-name",
+      "nameHint": "Kebab-case only (lowercase letters, numbers, hyphens).",
+      "nameRequired": "Skill name is required",
+      "nameInvalid": "Name must be kebab-case (e.g., my-skill-name)",
+      "description": "Description",
+      "descriptionPlaceholder": "Brief description of what this skill does",
+      "instructions": "Instructions",
+      "instructionsPlaceholder": "Write the skill instructions in markdown...",
+      "instructionsHint": "The markdown body of the SKILL.md file. This is what the agent sees when the skill is invoked.",
+      "disableModelInvocation": "Disable model invocation",
+      "disableModelInvocationHint": "Prevent the model from automatically invoking this skill",
+      "userInvocable": "User invocable",
+      "userInvocableHint": "Allow manual invocation via slash command",
+      "allowedTools": "Allowed tools",
+      "allowedToolsPlaceholder": "tool-one, tool-two, tool-three",
+      "allowedToolsHint": "Comma-separated list of tools this skill can use.",
+      "create": "Create Skill",
+      "save": "Save",
+      "cancel": "Cancel",
+      "saveFailed": "Failed to save skill. Please try again."
     }
   },
   "views": {
