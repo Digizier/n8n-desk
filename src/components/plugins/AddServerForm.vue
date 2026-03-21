@@ -255,7 +255,7 @@ const isEditing = computed(() => !!props.editServer)
           :label="t('plugins.addServer.headerName')"
           fill="outline"
           label-placement="stacked"
-          placeholder="Authorization"
+          :placeholder="t('plugins.addServer.headerNamePlaceholder')"
           :class="$style.headerInput"
         />
         <ion-input
@@ -263,7 +263,7 @@ const isEditing = computed(() => !!props.editServer)
           :label="t('plugins.addServer.headerValue')"
           fill="outline"
           label-placement="stacked"
-          placeholder="Bearer sk-..."
+          :placeholder="t('plugins.addServer.headerValuePlaceholder')"
           type="password"
           :class="$style.headerInput"
         />
