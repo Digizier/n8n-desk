@@ -122,20 +122,39 @@ function collectInternalStdout(context: vm.Context, stdout: string[]): void {
 }
 
 /**
+ * Check if an unknown value is error-like (has name and message string properties).
+ *
+ * Errors thrown inside a DONT_CONTEXTIFY vm context are NOT `instanceof Error`
+ * from the host's perspective — they originate from a separate V8 context with
+ * its own Error prototype chain. This helper detects error-like objects by
+ * duck-typing so that `classifyError` can inspect their properties.
+ */
+function isErrorLike(err: unknown): err is { name: string; message: string; code?: string } {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    typeof (err as Record<string, unknown>).name === 'string' &&
+    typeof (err as Record<string, unknown>).message === 'string'
+  )
+}
+
+/**
  * Classify a vm execution error into a typed error result.
+ *
+ * Handles both host-native Error instances and cross-context error objects
+ * from DONT_CONTEXTIFY vm contexts (where `instanceof Error` is false).
  */
 function classifyError(
   err: unknown,
   timeoutMs: number,
 ): NonNullable<SandboxResult['error']> {
-  if (!(err instanceof Error)) {
+  if (!isErrorLike(err)) {
     return { message: String(err), type: 'runtime' }
   }
 
   // Timeout: vm throws with code ERR_SCRIPT_EXECUTION_TIMEOUT
-  const errCode = (err as NodeJS.ErrnoException).code
   if (
-    errCode === 'ERR_SCRIPT_EXECUTION_TIMEOUT' ||
+    err.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT' ||
     err.message.includes('Script execution timed out')
   ) {
     return {
