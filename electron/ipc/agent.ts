@@ -535,12 +535,22 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
         ? COWORK_MODE_SYSTEM_PROMPT
         : WORKFLOW_MODE_SYSTEM_PROMPT
 
+      // Inject attached folder paths into the system prompt so the agent
+      // knows which folders are available and can use them with file tools.
+      let folderBlock = ''
+      if (attachedFolders.length > 0) {
+        const folderList = attachedFolders
+          .map((f) => `- ${f.path}`)
+          .join('\n')
+        folderBlock = `\n\n## Attached Project Folders\nThe user has attached the following folders to this session. You can use list_files, search_files, and all read/write tools on files inside these folders.\n${folderList}\n\nStart by using list_files to see what is in each folder when the user asks about their files.`
+      }
+
       // Inject skill descriptions into the system prompt (lazy loading:
       // only names + descriptions, NOT full content — expanded on invocation).
       const skillBlock = buildSkillDescriptions(autoInvocableSkills)
-      const augmentedPrompt = skillBlock
-        ? `${baseSystemPrompt}\n\n${skillBlock}`
-        : baseSystemPrompt
+      const augmentedPrompt = baseSystemPrompt
+        + folderBlock
+        + (skillBlock ? `\n\n${skillBlock}` : '')
 
       // Compute extended interruptOnTools: built-in destructive tools + all tools
       // from standalone servers that have requireApproval enabled.

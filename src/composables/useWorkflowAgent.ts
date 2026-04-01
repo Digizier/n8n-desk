@@ -46,7 +46,12 @@ export function useWorkflowAgent() {
 
     sessionStore.isAgentRunning = true
 
-    const result = await window.n8nDesk.agent.invoke(sessionId, text)
+    // Pass attached folders so the agent's sandbox policy scopes file access
+    const attachedFolders = sessionStore.activeSession?.attachedFolders ?? []
+    const result = await window.n8nDesk.agent.invoke(sessionId, text, {
+      attachedFolders: attachedFolders.map((f) => ({ path: f.path, label: f.label, mode: f.mode })),
+      mode: 'workflow',
+    })
     if (!result.success) {
       sessionStore.isAgentRunning = false
       await sessionStore.appendMessage({

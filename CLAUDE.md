@@ -937,6 +937,7 @@ npx cap open ios    # or android
 - **Navigation is side menu, never bottom tabs.** Use `IonMenu` + `IonSplitPane` + `IonSegment` for mode switching. No `IonTabs` or `IonTabBar`.
 - **Inputs always use `fill="outline"` and `label-placement="stacked"`** — label above, outlined border. This matches n8n's form style. Applies to `<ion-input>`, `<ion-textarea>`, and `<ion-select>`.
 - **Never use emojis in the UI.** Always use Lucide icons (via `lucide-vue-next`) or SVG icons instead. This applies to all components, empty states, placeholders, and fallbacks. If n8n's API returns emoji data (e.g., agent icons), render the first letter initial as fallback — never display the emoji.
+- **Both agent backends must stay in sync.** n8n-desk has two agent runners: Deep Agents SDK (`deep-agents-runner.ts`) and Claude Agent SDK (`claude-sdk-runner.ts`). Every feature — tools, file access, sandbox policy, approval flow, system prompts — must be implemented and tested in **both** backends. The Deep Agents runner uses LangChain tools directly; the Claude SDK runner exposes the same tools via a local MCP server (`local-mcp-server.ts`). When adding a new tool or capability, implement it once in the shared layer (e.g., `file-tools.ts`, `tool-definitions.ts`) and verify both runners pick it up. Never ship a feature that only works in one backend.
 
 ---
 

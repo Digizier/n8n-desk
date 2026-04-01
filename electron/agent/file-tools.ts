@@ -493,5 +493,187 @@ export function createFileTools(policy: FilesystemSandboxPolicy): LangChainTool[
         }),
       },
     ),
+
+    // --- List Files ------------------------------------------------------------
+
+    tool(
+      safeHandler(async (args) => {
+        const { path: dirPath, recursive, pattern } = args as {
+          path: string; recursive?: boolean; pattern?: string
+        }
+        const validation = await validateReadPath(dirPath, policy)
+        if ('error' in validation) {
+          return JSON.stringify({ success: false, error: validation.error })
+        }
+
+        const results: Array<{ name: string; type: 'file' | 'directory'; size?: number }> = []
+        const maxEntries = 500
+
+        async function listDir(dir: string, depth: number) {
+          if (results.length >= maxEntries) return
+          if (depth > 5) return // safety limit on recursion depth
+
+          let entries: Awaited<ReturnType<typeof fs.readdir>>
+          try {
+            entries = await fs.readdir(dir, { withFileTypes: true })
+          } catch {
+            return
+          }
+
+          for (const entry of entries) {
+            if (results.length >= maxEntries) break
+            // Skip hidden files/dirs
+            if (entry.name.startsWith('.')) continue
+
+            const fullPath = path.join(dir, entry.name)
+            const relativePath = path.relative(validation.resolvedPath!, fullPath)
+
+            if (pattern) {
+              const pat = pattern.toLowerCase()
+              if (!entry.name.toLowerCase().includes(pat) && !relativePath.toLowerCase().includes(pat)) {
+                // For directories in recursive mode, still descend
+                if (entry.isDirectory() && recursive) {
+                  await listDir(fullPath, depth + 1)
+                }
+                continue
+              }
+            }
+
+            if (entry.isDirectory()) {
+              results.push({ name: relativePath, type: 'directory' })
+              if (recursive) {
+                await listDir(fullPath, depth + 1)
+              }
+            } else {
+              let size: number | undefined
+              try {
+                const stat = await fs.stat(fullPath)
+                size = stat.size
+              } catch { /* ignore */ }
+              results.push({ name: relativePath, type: 'file', size })
+            }
+          }
+        }
+
+        await listDir(validation.resolvedPath!, 0)
+        const truncated = results.length >= maxEntries
+        return JSON.stringify({
+          success: true,
+          directory: dirPath,
+          entries: results,
+          totalEntries: results.length,
+          ...(truncated ? { truncated: true, note: `Showing first ${maxEntries} entries. Use a pattern to filter.` } : {}),
+        })
+      }),
+      {
+        name: 'list_files',
+        description:
+          'List files and directories in an attached folder. Returns names, types (file/directory), and file sizes. ' +
+          'Use this to explore the contents of a project folder before reading specific files.',
+        schema: z.object({
+          path: z.string().describe('Path to the directory to list'),
+          recursive: z.boolean().optional().describe('List subdirectories recursively (max depth 5). Default: false.'),
+          pattern: z.string().optional().describe('Filter entries by name pattern (case-insensitive substring match)'),
+        }),
+      },
+    ),
+
+    // --- Search File Contents --------------------------------------------------
+
+    tool(
+      safeHandler(async (args) => {
+        const { path: dirPath, query, extensions } = args as {
+          path: string; query: string; extensions?: string[]
+        }
+        const validation = await validateReadPath(dirPath, policy)
+        if ('error' in validation) {
+          return JSON.stringify({ success: false, error: validation.error })
+        }
+
+        const matches: Array<{ file: string; line: number; content: string }> = []
+        const maxMatches = 100
+        const queryLower = query.toLowerCase()
+
+        async function searchDir(dir: string, depth: number) {
+          if (matches.length >= maxMatches) return
+          if (depth > 5) return
+
+          let entries: Awaited<ReturnType<typeof fs.readdir>>
+          try {
+            entries = await fs.readdir(dir, { withFileTypes: true })
+          } catch {
+            return
+          }
+
+          for (const entry of entries) {
+            if (matches.length >= maxMatches) break
+            if (entry.name.startsWith('.')) continue
+
+            const fullPath = path.join(dir, entry.name)
+
+            if (entry.isDirectory()) {
+              await searchDir(fullPath, depth + 1)
+              continue
+            }
+
+            // Filter by extension if specified
+            if (extensions && extensions.length > 0) {
+              const ext = path.extname(entry.name).toLowerCase()
+              if (!extensions.some((e) => ext === (e.startsWith('.') ? e : `.${e}`).toLowerCase())) {
+                continue
+              }
+            }
+
+            // Skip large files (> 1MB)
+            try {
+              const stat = await fs.stat(fullPath)
+              if (stat.size > 1024 * 1024) continue
+            } catch {
+              continue
+            }
+
+            // Check read deny-list
+            const denyResult = isReadDenied(fullPath, policy.n8nDeskDir)
+            if (denyResult.denied) continue
+
+            try {
+              const content = await fs.readFile(fullPath, 'utf-8')
+              const lines = content.split('\n')
+              for (let i = 0; i < lines.length; i++) {
+                if (matches.length >= maxMatches) break
+                if (lines[i].toLowerCase().includes(queryLower)) {
+                  matches.push({
+                    file: path.relative(validation.resolvedPath!, fullPath),
+                    line: i + 1,
+                    content: lines[i].trim().slice(0, 200),
+                  })
+                }
+              }
+            } catch { /* skip unreadable files */ }
+          }
+        }
+
+        await searchDir(validation.resolvedPath!, 0)
+        const truncated = matches.length >= maxMatches
+        return JSON.stringify({
+          success: true,
+          query,
+          matches,
+          totalMatches: matches.length,
+          ...(truncated ? { truncated: true, note: `Showing first ${maxMatches} matches.` } : {}),
+        })
+      }),
+      {
+        name: 'search_files',
+        description:
+          'Search for text content across files in an attached folder. Returns matching file names, line numbers, and line content. ' +
+          'Useful for finding specific data, patterns, or references within a project.',
+        schema: z.object({
+          path: z.string().describe('Path to the directory to search in'),
+          query: z.string().describe('Text to search for (case-insensitive)'),
+          extensions: z.array(z.string()).optional().describe('File extensions to include (e.g., ["csv", "json", "txt"]). If omitted, searches all text files.'),
+        }),
+      },
+    ),
   ]
 }

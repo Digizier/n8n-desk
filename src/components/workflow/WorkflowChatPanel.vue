@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { sendOutline, settingsOutline } from 'ionicons/icons'
-import { Plus, ChevronDown, ChevronRight, Brain } from 'lucide-vue-next'
+import { Plus, ChevronDown, ChevronRight, Brain, FolderPlus, X } from 'lucide-vue-next'
 import { useWorkflowAgent } from '@/composables/useWorkflowAgent'
 import { useSettingsStore } from '@/stores/settings'
 import { useWorkflowSessionsStore } from '@/stores/workflow-sessions'
@@ -32,6 +32,40 @@ const hasLlmConfig = computed(() => settingsStore.hasLlmConfig)
 const inputText = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const scrollContainerRef = ref<HTMLDivElement | null>(null)
+
+// --- Folder attachment (scoped to session) ---
+const sessionFolders = computed(() => sessionStore.activeSession?.attachedFolders ?? [])
+
+// Folders can only be attached before the first message is sent.
+// Once the session has messages, the folder list is locked.
+const sessionHasMessages = computed(() => messages.value.length > 0)
+const canModifyFolders = computed(() => !sessionHasMessages.value && !isRunning.value)
+
+async function handleAttachFolder() {
+  if (!canModifyFolders.value) return
+
+  const folderPath = await window.n8nDesk?.dialog.openFolder()
+  if (!folderPath) return
+
+  const sessionId = sessionStore.activeSessionId
+  if (!sessionId) {
+    // Create session first, then attach
+    const newId = await sessionStore.createSession()
+    const label = folderPath.split(/[\\/]/).pop() ?? folderPath
+    await sessionStore.attachFolder(newId, { path: folderPath, label, mode: 'rw' })
+    return
+  }
+
+  const label = folderPath.split(/[\\/]/).pop() ?? folderPath
+  await sessionStore.attachFolder(sessionId, { path: folderPath, label, mode: 'rw' })
+}
+
+async function handleDetachFolder(folderPath: string) {
+  if (!canModifyFolders.value) return
+  const sessionId = sessionStore.activeSessionId
+  if (!sessionId) return
+  await sessionStore.detachFolder(sessionId, folderPath)
+}
 
 // --- Plus menu ---
 const plusMenuOpen = ref(false)
@@ -220,7 +254,7 @@ function findWorkflowInResult(r: Record<string, unknown>): { id: string; name: s
   return null
 }
 
-/** Extract workflow JSON from a tool call result, with diff support via history */
+/** Extract workflow JSON from a tool call result (pure — no side effects). */
 function extractWorkflowFromToolResult(result: unknown): WorkflowPreviewData | null {
   if (!result) return null
 
@@ -234,13 +268,8 @@ function extractWorkflowFromToolResult(result: unknown): WorkflowPreviewData | n
   const found = findWorkflowInResult(parsed as Record<string, unknown>)
   if (!found) return null
 
-  // Look up previous version for diff
+  // Look up previous version for diff (read only — no mutation here)
   const previousVersion = found.id ? sessionStore.workflowHistory.get(found.id) : undefined
-
-  // Store this version as latest for future diffs
-  if (found.id) {
-    sessionStore.workflowHistory.set(found.id, structuredClone(found.wf))
-  }
 
   return {
     workflowId: found.id,
@@ -250,11 +279,36 @@ function extractWorkflowFromToolResult(result: unknown): WorkflowPreviewData | n
   }
 }
 
-/** Get inline preview data for a tool call by its ID */
+/**
+ * Pre-computed inline previews keyed by toolCallId.
+ * Built by a watcher on toolCalls — never mutated during render.
+ */
+const inlinePreviewMap = ref<Map<string, WorkflowPreviewData>>(new Map())
+
+// Recompute previews when tool calls change (completions arrive)
+watch(
+  () => toolCalls.value.map((tc) => `${tc.id}:${tc.status}`).join(','),
+  () => {
+    for (const tc of toolCalls.value) {
+      if (tc.status !== 'completed' || !tc.result) continue
+      if (inlinePreviewMap.value.has(tc.id)) continue
+
+      const preview = extractWorkflowFromToolResult(tc.result)
+      if (!preview) continue
+
+      inlinePreviewMap.value.set(tc.id, preview)
+      // Update workflow history for future diffs
+      if (preview.workflowId) {
+        sessionStore.workflowHistory.set(preview.workflowId, structuredClone(preview.workflow))
+      }
+    }
+  },
+  { immediate: true },
+)
+
+/** Get inline preview data for a tool call by its ID (pure read — no mutations). */
 function getInlinePreview(toolCallId: string): WorkflowPreviewData | null {
-  const tc = toolCalls.value.find((t) => t.id === toolCallId)
-  if (!tc || tc.status !== 'completed' || !tc.result) return null
-  return extractWorkflowFromToolResult(tc.result)
+  return inlinePreviewMap.value.get(toolCallId) ?? null
 }
 
 // Find tool call for a given message
@@ -400,6 +454,27 @@ onMounted(scrollToBottom)
           Configure AI in Settings > AI/Agent
         </div>
 
+        <!-- Attached folder chips -->
+        <div v-if="sessionFolders.length > 0" :class="$style.folderChips">
+          <span
+            v-for="folder in sessionFolders"
+            :key="folder.path"
+            :class="[$style.folderChip, sessionHasMessages && $style.folderChipLocked]"
+            :title="folder.path"
+          >
+            <span :class="$style.folderChipLabel">{{ folder.label }}</span>
+            <button
+              v-if="canModifyFolders"
+              :class="$style.folderChipRemove"
+              type="button"
+              :aria-label="`Detach folder ${folder.label}`"
+              @click="handleDetachFolder(folder.path)"
+            >
+              <X :size="12" />
+            </button>
+          </span>
+        </div>
+
         <!-- Skill autocomplete dropdown -->
         <div v-if="showSkillAutocomplete" :class="$style.autocomplete">
           <div
@@ -416,24 +491,8 @@ onMounted(scrollToBottom)
           </div>
         </div>
 
-        <div :class="$style.inputRow">
-          <div :class="$style.plusBtnWrap">
-            <button
-              id="plus-menu-trigger"
-              :class="$style.plusBtn"
-              title="Skills, Connectors & Plugins"
-              @click.stop="plusMenuOpen = !plusMenuOpen"
-            >
-              <Plus :size="18" />
-            </button>
-            <PlusMenu
-              :is-open="plusMenuOpen"
-              trigger="plus-menu-trigger"
-              :session-disabled-skills="sessionDisabledSkills"
-              @update:is-open="plusMenuOpen = $event"
-              @toggle-session-skill="handleSessionSkillToggle"
-            />
-          </div>
+        <!-- Input box (textarea + action bar) -->
+        <div :class="$style.inputBox">
           <textarea
             ref="textareaRef"
             v-model="inputText"
@@ -444,13 +503,42 @@ onMounted(scrollToBottom)
             @input="handleInput"
             @keydown="handleKeydown"
           />
-          <button
-            :class="$style.sendBtn"
-            :disabled="!canSend"
-            @click="send"
-          >
-            <ion-icon :icon="sendOutline" />
-          </button>
+          <div :class="$style.actionRow">
+            <div :class="$style.actionRowLeft">
+              <div :class="$style.plusBtnWrap">
+                <button
+                  id="plus-menu-trigger"
+                  :class="$style.actionIconBtn"
+                  title="Skills, Connectors & Plugins"
+                  @click.stop="plusMenuOpen = !plusMenuOpen"
+                >
+                  <Plus :size="16" />
+                </button>
+                <PlusMenu
+                  :is-open="plusMenuOpen"
+                  trigger="plus-menu-trigger"
+                  :session-disabled-skills="sessionDisabledSkills"
+                  @update:is-open="plusMenuOpen = $event"
+                  @toggle-session-skill="handleSessionSkillToggle"
+                />
+              </div>
+              <button
+                :class="[$style.actionIconBtn, !canModifyFolders && $style.actionIconBtnDisabled]"
+                :title="sessionHasMessages ? 'Folders are locked after first message' : 'Attach a project folder'"
+                :disabled="!canModifyFolders"
+                @click="handleAttachFolder"
+              >
+                <FolderPlus :size="16" />
+              </button>
+            </div>
+            <button
+              :class="$style.sendBtn"
+              :disabled="!canSend"
+              @click="send"
+            >
+              <ion-icon :icon="sendOutline" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -775,30 +863,32 @@ onMounted(scrollToBottom)
   font-size: 14px;
 }
 
-.inputRow {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
+.inputBox {
+  background: var(--n8n-desk--surface-bg, var(--color--foreground));
+  border: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+  border-radius: 12px;
+  padding: 10px 14px 6px;
+  transition: border-color 0.15s;
+
+  &:focus-within {
+    border-color: var(--color--primary, #ff6d5a);
+  }
 }
 
 .textarea {
-  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
   resize: none;
-  border: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground));
-  border-radius: 12px;
-  padding: 10px 14px;
+  border: none;
+  padding: 0;
   font-size: 14px;
   font-family: inherit;
   line-height: 1.5;
-  background: var(--n8n-desk--surface-bg, var(--color--foreground));
+  background: transparent;
   color: var(--color--text--shade-1);
   outline: none;
   max-height: 150px;
   overflow-y: auto;
-
-  &:focus {
-    border-color: var(--color--primary, #ff6d5a);
-  }
 
   &:disabled {
     opacity: 0.5;
@@ -834,31 +924,105 @@ onMounted(scrollToBottom)
   }
 }
 
+// --- Folder chips ---
+.folderChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 6px;
+}
+
+.folderChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 8px;
+  background: var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color--text--shade-1, inherit);
+  max-width: 200px;
+}
+
+.folderChipLocked {
+  padding-right: 8px;
+  opacity: 0.7;
+}
+
+.folderChipLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folderChipRemove {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--color--text--tint-1, #999);
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+
+  &:hover {
+    color: var(--color--text--shade-1, inherit);
+    background: rgba(0, 0, 0, 0.08);
+  }
+}
+
+// --- Action row (below textarea) ---
+.actionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 6px;
+}
+
+.actionRowLeft {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.actionIconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: none;
+  color: var(--color--text--tint-1);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+
+  &:hover {
+    color: var(--color--text--shade-1);
+    background: var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+  }
+}
+
+.actionIconBtnDisabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .plusBtnWrap {
   position: relative;
   flex-shrink: 0;
 }
 
-.plusBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground));
-  background: var(--n8n-desk--surface-bg, var(--color--foreground));
-  color: var(--color--text--tint-1);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-
-  &:hover {
-    color: var(--color--text--shade-1);
-    border-color: var(--color--text--tint-2);
-    background: var(--n8n-desk--surface-raised-bg, var(--color--foreground));
-  }
-}
+// .plusBtn removed — uses .actionIconBtn now
 
 // Skill autocomplete dropdown
 .autocomplete {

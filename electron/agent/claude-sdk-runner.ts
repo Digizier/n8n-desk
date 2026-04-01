@@ -41,8 +41,9 @@ export class ClaudeSdkRunner implements AgentRunner {
   private abortControllers = new Map<string, AbortController>()
   private pendingApprovals = new Map<string, PendingApproval>()
   private activeQueries = new Map<string, { close: () => void }>()
-  /** Per-session local MCP servers exposing sandboxed file tools + js_compute */
-  private localMcpServers = new Map<string, { stop: () => Promise<void> }>()
+  /** Per-session in-process MCP servers for file tools (cleanup via McpServer.close()) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private localMcpServers = new Map<string, { close: () => Promise<void> }>()
 
   async *invoke(
     sessionId: string,
@@ -168,29 +169,68 @@ export class ClaudeSdkRunner implements AgentRunner {
       }
     }
 
-    // Start a local MCP server exposing sandboxed file tools + js_compute
-    // when a sandbox policy is present. The Claude SDK only supports MCP
-    // servers (not raw LangChain tools), so local tools must be exposed
-    // via a localhost HTTP MCP server. The server is per-session and stopped
-    // on cleanup. File tools and js_compute do NOT require approval.
+    // Expose sandboxed file tools + js_compute via an in-process MCP server
+    // using the SDK's native McpSdkServerConfigWithInstance. This avoids the
+    // HTTP localhost server entirely — the SDK talks to our McpServer instance
+    // directly in-process, which is faster and more reliable.
     if (config.sandboxPolicy) {
       try {
-        const { LocalMcpServer } = await import('./local-mcp-server')
-        const localServer = new LocalMcpServer(config.sandboxPolicy)
-        const serverInfo = await localServer.start()
-        this.localMcpServers.set(sessionId, localServer)
+        const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js')
+        const { createFileTools } = await import('./file-tools')
+        const { jsComputeTool } = await import('./js-sandbox')
 
-        // 'n8n-desk-local' is reserved for the per-session file tools server
-        mcpServers['n8n-desk-local'] = {
-          type: 'http',
-          url: serverInfo.url,
-          headers: {},
+        const mcpServer = new McpServer(
+          { name: 'n8n-desk-local', version: '1.0.0' },
+          { capabilities: { tools: {} } },
+        )
+
+        // Register all file tools + js_compute as MCP tools on the in-process server
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const allTools: any[] = [...createFileTools(config.sandboxPolicy), jsComputeTool]
+        for (const lcTool of allTools) {
+          const zodShape = lcTool.schema?.shape
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const handler = async (args: Record<string, unknown>): Promise<any> => {
+            try {
+              const result = await lcTool.invoke(args)
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: typeof result === 'string' ? result : JSON.stringify(result),
+                }],
+              }
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : String(err)
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: JSON.stringify({ success: false, error: message }),
+                }],
+                isError: true,
+              }
+            }
+          }
+          if (zodShape) {
+            mcpServer.tool(lcTool.name, lcTool.description ?? '', zodShape, handler)
+          } else {
+            mcpServer.tool(lcTool.name, lcTool.description ?? '', handler)
+          }
         }
+
+        console.log(`[n8n-desk] Registered ${allTools.length} file tools on in-process MCP server`)
+        this.localMcpServers.set(sessionId, mcpServer)
+
+        // Use SDK-native in-process server — no HTTP, no port, no transport issues
+        mcpServers['n8n-desk-local'] = {
+          type: 'sdk',
+          name: 'n8n-desk-local',
+          instance: mcpServer,
+        } as Record<string, unknown> as typeof mcpServers[string]
       } catch (err) {
         // Non-fatal: file tools won't be available, but n8n MCP tools still work
         console.error(
-          '[n8n-desk] Failed to start local MCP server for file tools:',
-          err instanceof Error ? err.message : String(err),
+          '[n8n-desk] Failed to register local file tools MCP server:',
+          err instanceof Error ? err.stack : String(err),
         )
       }
     }
@@ -301,10 +341,10 @@ export class ClaudeSdkRunner implements AgentRunner {
     this.pendingApprovals.delete(sessionId)
     this.activeQueries.delete(sessionId)
 
-    // Stop the per-session local MCP server (file tools + js_compute)
+    // Close the per-session in-process MCP server (file tools + js_compute)
     const localServer = this.localMcpServers.get(sessionId)
     if (localServer) {
-      localServer.stop().catch(() => {})
+      localServer.close().catch(() => {})
       this.localMcpServers.delete(sessionId)
     }
   }
