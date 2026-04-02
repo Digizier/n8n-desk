@@ -14,7 +14,7 @@ declare module '*.vue' {
 
 interface N8nDeskBridge {
   agent: {
-    invoke: (sessionId: string, message: string, options?: { attachedFolders?: { path: string; label: string; mode: 'ro' | 'rw' }[]; mode?: 'cowork' | 'workflow' }) => Promise<{ success: boolean; error?: string }>
+    invoke: (sessionId: string, message: string, options?: { attachedFolders?: { path: string; label: string; mode: 'ro' | 'rw' }[]; attachedFiles?: string[]; mode?: 'cowork' | 'workflow' }) => Promise<{ success: boolean; error?: string }>
     stop: (sessionId: string) => Promise<{ success: boolean }>
     approve: (sessionId: string, decision: 'approve' | 'reject') => Promise<{ success: boolean; error?: string }>
     testConnection: () => Promise<{ success: boolean; error?: string }>
@@ -114,6 +114,10 @@ interface N8nDeskBridge {
   }
   dialog: {
     openFolder: () => Promise<string | null>
+    openFiles: () => Promise<string[] | null>
+  }
+  shell: {
+    showInFolder: (folderPath: string) => Promise<void>
   }
 }
 

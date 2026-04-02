@@ -138,5 +138,11 @@ contextBridge.exposeInMainWorld('n8nDesk', {
   dialog: {
     openFolder: () =>
       ipcRenderer.invoke('dialog:open-folder'),
+    openFiles: () =>
+      ipcRenderer.invoke('dialog:open-files'),
+  },
+  shell: {
+    showInFolder: (folderPath: string) =>
+      ipcRenderer.invoke('shell:show-in-folder', folderPath),
   },
 })

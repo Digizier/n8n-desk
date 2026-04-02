@@ -437,6 +437,8 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   interface AgentInvokeOptions {
     /** Folders the user has attached to this session */
     attachedFolders?: Array<{ path: string }>
+    /** Individual files the user has attached to this message */
+    attachedFiles?: string[]
     /** Agent mode — determines sandbox policy, system prompt, and session path */
     mode?: 'workflow' | 'cowork'
   }
@@ -444,6 +446,7 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle('agent:invoke', async (_event, sessionId: string, message: string, options?: AgentInvokeOptions) => {
     const mode = options?.mode ?? 'workflow'
     const attachedFolders = options?.attachedFolders ?? []
+    const attachedFiles = options?.attachedFiles ?? []
     try {
       const llmConfig = await resolveLlmConfig()
       if (!llmConfig) {
@@ -495,9 +498,24 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
       // Build per-session sandbox policy based on mode and attached folders.
       // If no folders are attached, the policy still grants read access to
       // ~/.n8n-desk/ (minus sensitive files) and write access to skills/.
+      //
+      // Individually attached files: add their parent directories as read-only
+      // mounts so the agent can read them. The agent is told the exact paths
+      // in the system prompt — it won't browse the parent dirs randomly.
+      const fileFolderMounts = attachedFiles.map((fp) => ({
+        path: path.dirname(fp),
+      }))
+      // Deduplicate: merge file parent dirs with explicit folder mounts
+      const allMountFolders = [...attachedFolders]
+      for (const fm of fileFolderMounts) {
+        if (!allMountFolders.some((f) => f.path === fm.path)) {
+          allMountFolders.push(fm)
+        }
+      }
+
       const sandboxPolicy = mode === 'cowork'
-        ? buildCoworkPolicy(attachedFolders, BASE_DIR)
-        : buildWorkflowPolicy(attachedFolders, BASE_DIR)
+        ? buildCoworkPolicy(allMountFolders, BASE_DIR)
+        : buildWorkflowPolicy(allMountFolders, BASE_DIR)
 
       // Create sandboxed file tools (13 format tools) and include jsComputeTool.
       // These are always available — they do NOT require approval.
@@ -535,21 +553,27 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
         ? COWORK_MODE_SYSTEM_PROMPT
         : WORKFLOW_MODE_SYSTEM_PROMPT
 
-      // Inject attached folder paths into the system prompt so the agent
-      // knows which folders are available and can use them with file tools.
-      let folderBlock = ''
+      // Inject attached folder and file paths into the system prompt so the
+      // agent knows which resources are available for file tools.
+      let contextBlock = ''
       if (attachedFolders.length > 0) {
         const folderList = attachedFolders
           .map((f) => `- ${f.path}`)
           .join('\n')
-        folderBlock = `\n\n## Attached Project Folders\nThe user has attached the following folders to this session. You can use list_files, search_files, and all read/write tools on files inside these folders.\n${folderList}\n\nStart by using list_files to see what is in each folder when the user asks about their files.`
+        contextBlock += `\n\n## Attached Project Folders\nThe user has attached the following folders to this session. You can use list_files, search_files, and all read/write tools on files inside these folders.\n${folderList}\n\nStart by using list_files to see what is in each folder when the user asks about their files.`
+      }
+      if (attachedFiles.length > 0) {
+        const fileList = attachedFiles
+          .map((f) => `- ${f}`)
+          .join('\n')
+        contextBlock += `\n\n## Attached Files\nThe user has attached these files directly. You can read them immediately with the appropriate read tool (read_excel, read_csv, read_pdf, etc.).\n${fileList}`
       }
 
       // Inject skill descriptions into the system prompt (lazy loading:
       // only names + descriptions, NOT full content — expanded on invocation).
       const skillBlock = buildSkillDescriptions(autoInvocableSkills)
       const augmentedPrompt = baseSystemPrompt
-        + folderBlock
+        + contextBlock
         + (skillBlock ? `\n\n${skillBlock}` : '')
 
       // Compute extended interruptOnTools: built-in destructive tools + all tools

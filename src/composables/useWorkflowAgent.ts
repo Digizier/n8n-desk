@@ -24,7 +24,7 @@ export function useWorkflowAgent() {
    * Send a message to the workflow agent.
    * Creates a session if none is active.
    */
-  async function sendMessage(text: string): Promise<void> {
+  async function sendMessage(text: string, attachedFilePaths?: string[]): Promise<void> {
     if (!window.n8nDesk) {
       throw new Error('n8nDesk bridge not available')
     }
@@ -46,10 +46,13 @@ export function useWorkflowAgent() {
 
     sessionStore.isAgentRunning = true
 
-    // Pass attached folders so the agent's sandbox policy scopes file access
+    // Pass attached folders so the agent's sandbox policy scopes file access.
+    // Also pass directly attached file paths — these are individually granted
+    // by the user and added as individual file mounts in the sandbox.
     const attachedFolders = sessionStore.activeSession?.attachedFolders ?? []
     const result = await window.n8nDesk.agent.invoke(sessionId, text, {
       attachedFolders: attachedFolders.map((f) => ({ path: f.path, label: f.label, mode: f.mode })),
+      attachedFiles: attachedFilePaths,
       mode: 'workflow',
     })
     if (!result.success) {

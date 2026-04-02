@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { sendOutline, settingsOutline } from 'ionicons/icons'
-import { Plus, ChevronDown, ChevronRight, Brain, FolderPlus, X } from 'lucide-vue-next'
+import { Plus, ChevronDown, ChevronRight, Brain, FolderPlus, Paperclip, X, FileText, FileSpreadsheet, FileImage } from 'lucide-vue-next'
 import { useWorkflowAgent } from '@/composables/useWorkflowAgent'
 import { useSettingsStore } from '@/stores/settings'
 import { useWorkflowSessionsStore } from '@/stores/workflow-sessions'
@@ -65,6 +65,108 @@ async function handleDetachFolder(folderPath: string) {
   const sessionId = sessionStore.activeSessionId
   if (!sessionId) return
   await sessionStore.detachFolder(sessionId, folderPath)
+}
+
+// --- File attachment (direct files, allowed any time) ---
+
+/** Extensions the user is allowed to attach as files. */
+const ALLOWED_FILE_EXTENSIONS = new Set([
+  '.csv', '.xlsx', '.xls',
+  '.json', '.jsonl',
+  '.yaml', '.yml',
+  '.txt', '.md', '.log',
+  '.pdf',
+  '.docx',
+  '.xml', '.html', '.svg',
+  '.toml',
+])
+
+interface AttachedFile {
+  name: string
+  path: string
+  size: number
+}
+
+const attachedFiles = ref<AttachedFile[]>([])
+const isDragOver = ref(false)
+
+function fileExtAllowed(filename: string): boolean {
+  const ext = filename.lastIndexOf('.') >= 0
+    ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
+    : ''
+  return ALLOWED_FILE_EXTENSIONS.has(ext)
+}
+
+function fileIcon(filename: string) {
+  const ext = filename.lastIndexOf('.') >= 0
+    ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
+    : ''
+  if (['.xlsx', '.xls', '.csv'].includes(ext)) return FileSpreadsheet
+  if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].includes(ext)) return FileImage
+  return FileText
+}
+
+async function handleAttachFiles() {
+  const files = await window.n8nDesk?.dialog.openFiles()
+  if (!files || files.length === 0) return
+  addFiles(files)
+}
+
+function addFiles(filePaths: string[]) {
+  for (const fp of filePaths) {
+    const name = fp.split(/[\\/]/).pop() ?? fp
+    if (!fileExtAllowed(name)) continue
+    if (attachedFiles.value.some((f) => f.path === fp)) continue
+    attachedFiles.value.push({ name, path: fp, size: 0 })
+  }
+}
+
+function removeFile(filePath: string) {
+  attachedFiles.value = attachedFiles.value.filter((f) => f.path !== filePath)
+}
+
+function handleDragOver(e: DragEvent) {
+  e.preventDefault()
+  isDragOver.value = true
+}
+
+function handleDragLeave() {
+  isDragOver.value = false
+}
+
+function handleDrop(e: DragEvent) {
+  e.preventDefault()
+  isDragOver.value = false
+  if (!e.dataTransfer?.files) return
+  const paths: string[] = []
+  for (const file of Array.from(e.dataTransfer.files)) {
+    // Electron exposes .path on dropped File objects
+    const fp = (file as File & { path?: string }).path
+    if (fp && fileExtAllowed(file.name)) {
+      paths.push(fp)
+    }
+  }
+  addFiles(paths)
+}
+
+// --- Folder context menu ---
+const folderContextMenu = ref<{ x: number; y: number; path: string } | null>(null)
+
+function handleFolderContextMenu(e: MouseEvent, folderPath: string) {
+  e.preventDefault()
+  folderContextMenu.value = { x: e.clientX, y: e.clientY, path: folderPath }
+
+  const close = () => {
+    folderContextMenu.value = null
+    document.removeEventListener('click', close)
+  }
+  // Close on next click anywhere
+  setTimeout(() => document.addEventListener('click', close), 0)
+}
+
+async function showInFinder(folderPath: string) {
+  folderContextMenu.value = null
+  await window.n8nDesk?.shell.showInFolder(folderPath)
 }
 
 // --- Plus menu ---
@@ -213,7 +315,11 @@ async function send() {
   autocompleteDismissed.value = true
   nextTick(resizeTextarea)
   const resolved = resolveSkillInput(text)
-  await sendMessage(resolved)
+  // Pass attached file paths so the agent can access them
+  const filePaths = attachedFiles.value.map((f) => f.path)
+  await sendMessage(resolved, filePaths)
+  // Clear attached files after sending (they're captured by the agent)
+  attachedFiles.value = []
 }
 
 function handleApprove(_id: string) {
@@ -446,33 +552,17 @@ onMounted(scrollToBottom)
       </div>
     </div>
 
-    <!-- Input area -->
-    <div :class="$style.inputArea">
+    <!-- Input area (drop zone) -->
+    <div
+      :class="[$style.inputArea, isDragOver && $style.inputAreaDragOver]"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
+    >
       <div :class="$style.inputInner">
         <div v-if="!hasLlmConfig" :class="$style.configHint">
           <ion-icon :icon="settingsOutline" :class="$style.configIcon" />
           Configure AI in Settings > AI/Agent
-        </div>
-
-        <!-- Attached folder chips -->
-        <div v-if="sessionFolders.length > 0" :class="$style.folderChips">
-          <span
-            v-for="folder in sessionFolders"
-            :key="folder.path"
-            :class="[$style.folderChip, sessionHasMessages && $style.folderChipLocked]"
-            :title="folder.path"
-          >
-            <span :class="$style.folderChipLabel">{{ folder.label }}</span>
-            <button
-              v-if="canModifyFolders"
-              :class="$style.folderChipRemove"
-              type="button"
-              :aria-label="`Detach folder ${folder.label}`"
-              @click="handleDetachFolder(folder.path)"
-            >
-              <X :size="12" />
-            </button>
-          </span>
         </div>
 
         <!-- Skill autocomplete dropdown -->
@@ -493,6 +583,27 @@ onMounted(scrollToBottom)
 
         <!-- Input box (textarea + action bar) -->
         <div :class="$style.inputBox">
+          <!-- Attached file tiles -->
+          <div v-if="attachedFiles.length > 0" :class="$style.fileTiles">
+            <div
+              v-for="file in attachedFiles"
+              :key="file.path"
+              :class="$style.fileTile"
+              :title="file.path"
+            >
+              <component :is="fileIcon(file.name)" :size="14" :class="$style.fileTileIcon" />
+              <span :class="$style.fileTileName">{{ file.name }}</span>
+              <button
+                :class="$style.fileTileRemove"
+                type="button"
+                :aria-label="`Remove ${file.name}`"
+                @click="removeFile(file.path)"
+              >
+                <X :size="10" />
+              </button>
+            </div>
+          </div>
+
           <textarea
             ref="textareaRef"
             v-model="inputText"
@@ -523,12 +634,29 @@ onMounted(scrollToBottom)
                 />
               </div>
               <button
-                :class="[$style.actionIconBtn, !canModifyFolders && $style.actionIconBtnDisabled]"
-                :title="sessionHasMessages ? 'Folders are locked after first message' : 'Attach a project folder'"
-                :disabled="!canModifyFolders"
+                v-if="canModifyFolders"
+                :class="$style.actionIconBtn"
+                title="Attach a project folder"
                 @click="handleAttachFolder"
               >
                 <FolderPlus :size="16" />
+              </button>
+              <span
+                v-else-if="sessionFolders.length > 0"
+                :class="$style.lockedFolderLabel"
+                :title="sessionFolders.map(f => f.path).join('\n')"
+                @contextmenu="handleFolderContextMenu($event, sessionFolders[0].path)"
+              >
+                <FolderPlus :size="14" :class="$style.lockedFolderIcon" />
+                {{ sessionFolders[0].label }}{{ sessionFolders.length > 1 ? ` +${sessionFolders.length - 1}` : '' }}
+              </span>
+              <button
+                :class="$style.actionIconBtn"
+                title="Attach files"
+                :disabled="isRunning"
+                @click="handleAttachFiles"
+              >
+                <Paperclip :size="16" />
               </button>
             </div>
             <button
@@ -543,6 +671,32 @@ onMounted(scrollToBottom)
       </div>
     </div>
 
+    <!-- Folder context menu -->
+    <Teleport to="body">
+      <div
+        v-if="folderContextMenu"
+        :class="$style.contextMenu"
+        :style="{ left: folderContextMenu.x + 'px', top: folderContextMenu.y + 'px' }"
+      >
+        <button
+          :class="$style.contextMenuItem"
+          @click="showInFinder(folderContextMenu!.path)"
+        >
+          Show in Finder
+        </button>
+        <template v-if="sessionFolders.length > 1">
+          <div :class="$style.contextMenuSep" />
+          <button
+            v-for="folder in sessionFolders.slice(1)"
+            :key="folder.path"
+            :class="$style.contextMenuItem"
+            @click="showInFinder(folder.path)"
+          >
+            {{ folder.label }}
+          </button>
+        </template>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -924,39 +1078,61 @@ onMounted(scrollToBottom)
   }
 }
 
-// --- Folder chips ---
-.folderChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding-bottom: 6px;
-}
-
-.folderChip {
+// --- Locked folder label (in action row after session starts) ---
+.lockedFolderLabel {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 6px 2px 8px;
-  background: var(--n8n-desk--surface-raised-bg, var(--color--foreground));
-  border-radius: 6px;
   font-size: 12px;
-  line-height: 1.4;
-  color: var(--color--text--shade-1, inherit);
-  max-width: 200px;
-}
-
-.folderChipLocked {
-  padding-right: 8px;
+  color: var(--color--text--tint-1);
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   opacity: 0.7;
 }
 
-.folderChipLabel {
+.lockedFolderIcon {
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+// --- File tiles (above textarea) ---
+.fileTiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 8px;
+}
+
+.fileTile {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px 4px 8px;
+  background: var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--color--text--shade-1, inherit);
+  max-width: 180px;
+}
+
+.fileTileIcon {
+  flex-shrink: 0;
+  color: var(--color--text--tint-1);
+}
+
+.fileTileName {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.folderChipRemove {
+.fileTileRemove {
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -974,6 +1150,56 @@ onMounted(scrollToBottom)
   &:hover {
     color: var(--color--text--shade-1, inherit);
     background: rgba(0, 0, 0, 0.08);
+  }
+}
+
+// --- Context menu ---
+.contextMenu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 160px;
+  background: var(--n8n-desk--surface-bg, var(--color--foreground));
+  border: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.contextMenuItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--color--text--shade-1);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s;
+
+  &:hover {
+    background: var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+  }
+}
+
+.contextMenuSep {
+  height: 1px;
+  background: var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+  margin: 4px 6px;
+}
+
+// --- Drag-over state ---
+.inputAreaDragOver {
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px dashed var(--color--primary, #ff6d5a);
+    border-radius: 12px;
+    background: rgba(255, 109, 90, 0.05);
+    pointer-events: none;
+    z-index: 2;
   }
 }
 
