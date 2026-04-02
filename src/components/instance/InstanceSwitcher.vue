@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n'
 import { useInstancesStore } from '@/stores/instances'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkflowSessionsStore } from '@/stores/workflow-sessions'
+import { useCoworkSessionsStore } from '@/stores/cowork-sessions'
 
 defineProps<{
   trigger?: string
@@ -18,6 +19,7 @@ const { t } = useI18n()
 const instancesStore = useInstancesStore()
 const authStore = useAuthStore()
 const workflowSessionsStore = useWorkflowSessionsStore()
+const coworkSessionsStore = useCoworkSessionsStore()
 
 const popover = defineModel<boolean>('isOpen', { default: false })
 
@@ -30,9 +32,11 @@ async function switchTo(instanceId: string): Promise<void> {
   // Full context swap
   authStore.reset()
   workflowSessionsStore.reset()
+  coworkSessionsStore.reset()
   await instancesStore.setActive(instanceId)
   await authStore.hydrate(instanceId)
   await workflowSessionsStore.hydrate(instanceId)
+  await coworkSessionsStore.hydrate(instanceId)
 
   popover.value = false
 
