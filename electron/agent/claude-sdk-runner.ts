@@ -44,6 +44,8 @@ export class ClaudeSdkRunner implements AgentRunner {
   /** Per-session in-process MCP servers for file tools (cleanup via McpServer.close()) */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private localMcpServers = new Map<string, { close: () => Promise<void> }>()
+  /** Maps tool_use block ID → tool name so tool_call_result can include the name */
+  private toolNameMap = new Map<string, string>()
 
   async *invoke(
     sessionId: string,
@@ -387,6 +389,7 @@ export class ClaudeSdkRunner implements AgentRunner {
     this.abortControllers.delete(sessionId)
     this.pendingApprovals.delete(sessionId)
     this.activeQueries.delete(sessionId)
+    this.toolNameMap.clear()
 
     // Close the per-session in-process MCP server (file tools + js_compute)
     const localServer = this.localMcpServers.get(sessionId)
@@ -451,6 +454,8 @@ export class ClaudeSdkRunner implements AgentRunner {
                 data: { text: block.text },
               })
             } else if (block.type === 'tool_use') {
+              // Track tool name for later lookup in tool_call_result
+              this.toolNameMap.set(block.id, block.name)
               events.push({
                 type: 'tool_call_start',
                 sessionId,
@@ -537,12 +542,15 @@ export class ClaudeSdkRunner implements AgentRunner {
           const isError = typeof resultContent === 'string'
             && (resultContent.includes('"error"') || resultContent.includes('Error'))
 
+          // Look up the tool name from the earlier tool_call_start
+          const toolName = this.toolNameMap.get(toolUseId) ?? ''
+
           events.push({
             type: 'tool_call_result',
             sessionId,
             data: {
               id: toolUseId,
-              name: '',
+              name: toolName,
               result: resultStr,
               success: !isError,
               ...(isError ? { error: resultStr } : {}),

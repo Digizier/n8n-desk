@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { sendOutline, settingsOutline } from 'ionicons/icons'
-import { Plus, ChevronDown, ChevronRight, Brain, FolderPlus, Paperclip, X, FileText, FileSpreadsheet, FileImage } from 'lucide-vue-next'
+import { Plus, ChevronDown, ChevronRight, Brain, FolderPlus, Paperclip, X, FileText, FileSpreadsheet, FileImage, Sparkles, ArrowRight } from 'lucide-vue-next'
 import { useCoworkAgent } from '@/composables/useCoworkAgent'
 import { useSettingsStore } from '@/stores/settings'
 import { useCoworkSessionsStore } from '@/stores/cowork-sessions'
@@ -391,9 +391,10 @@ function extractWorkflowFromToolResult(result: unknown): WorkflowPreviewData | n
  */
 const inlinePreviewMap = ref<Map<string, WorkflowPreviewData>>(new Map())
 
-// Recompute previews when tool calls change (completions arrive)
+// Recompute previews when tool calls change (completions arrive or results are injected).
+// Deep-watch toolCalls so we detect result replacement from workflow_preview events.
 watch(
-  () => toolCalls.value.map((tc) => `${tc.id}:${tc.status}`).join(','),
+  toolCalls,
   () => {
     for (const tc of toolCalls.value) {
       if (tc.status !== 'completed' || !tc.result) continue
@@ -409,7 +410,7 @@ watch(
       }
     }
   },
-  { immediate: true },
+  { immediate: true, deep: true },
 )
 
 /** Get inline preview data for a tool call by its ID (pure read — no mutations). */
@@ -449,6 +450,21 @@ watch(
 watch(isRunning, () => nextTick(scrollToBottom), { flush: 'post' })
 
 onMounted(scrollToBottom)
+
+const examplePrompts = [
+  { label: 'Process CSV invoices', prompt: 'Read all CSV files in the current folder, extract invoice totals, and create a summary spreadsheet' },
+  { label: 'Sync data between services', prompt: 'Fetch new leads from the CRM and sync them to our mailing list using an existing workflow' },
+  { label: 'Generate a weekly report', prompt: 'Collect metrics from the last 7 days and compile a formatted status report' },
+  { label: 'Clean up duplicates', prompt: 'Scan the data folder for duplicate entries across JSON files and consolidate them' },
+]
+
+function useExamplePrompt(prompt: string) {
+  inputText.value = prompt
+  nextTick(() => {
+    resizeTextarea()
+    textareaRef.value?.focus()
+  })
+}
 </script>
 
 <template>
@@ -460,8 +476,23 @@ onMounted(scrollToBottom)
     <div ref="scrollContainerRef" :class="$style.messages">
       <div :class="$style.messagesInner">
       <div v-if="messages.length === 0" :class="$style.empty">
+        <div :class="$style.emptyIcon">
+          <Sparkles :size="28" />
+        </div>
         <p :class="$style.emptyTitle">Cowork Agent</p>
         <p :class="$style.emptyHint">Describe a task and the agent will help you accomplish it using n8n workflows and local tools.</p>
+        <div :class="$style.exampleGrid">
+          <button
+            v-for="ex in examplePrompts"
+            :key="ex.label"
+            :class="$style.exampleChip"
+            :disabled="!hasLlmConfig"
+            @click="useExamplePrompt(ex.prompt)"
+          >
+            <span :class="$style.exampleLabel">{{ ex.label }}</span>
+            <ArrowRight :size="14" :class="$style.exampleArrow" />
+          </button>
+        </div>
       </div>
 
       <template v-for="msg in messages" :key="msg.id">
@@ -742,19 +773,85 @@ onMounted(scrollToBottom)
   align-items: center;
   justify-content: center;
   text-align: center;
+  min-height: 60vh;
+  padding: 24px 16px;
+}
+
+.emptyIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--n8n-desk--surface-bg, var(--color--foreground));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: var(--color--text--tint-1);
 }
 
 .emptyTitle {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--color--text--shade-1);
-  margin: 0 0 4px;
+  margin: 0 0 6px;
 }
 
 .emptyHint {
   font-size: 13px;
   color: var(--color--text--tint-1);
-  margin: 0;
+  margin: 0 0 24px;
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+.exampleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  max-width: 480px;
+  width: 100%;
+}
+
+.exampleChip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+  background: var(--n8n-desk--surface-bg, var(--color--foreground));
+  color: var(--color--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+
+  &:hover:not(:disabled) {
+    background: var(--n8n-desk--surface-raised-bg, var(--color--foreground--tint-1));
+    border-color: var(--color--text--tint-2);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.exampleLabel {
+  flex: 1;
+  line-height: 1.4;
+}
+
+.exampleArrow {
+  flex-shrink: 0;
+  color: var(--color--text--tint-1);
+  opacity: 0;
+  transition: opacity 0.15s;
+
+  .exampleChip:hover:not(:disabled) & {
+    opacity: 1;
+  }
 }
 
 // --- Thinking ---

@@ -134,12 +134,21 @@ contextBridge.exposeInMainWorld('n8nDesk', {
       ipcRenderer.invoke('plugins:save-skill', skill),
     deleteSkill: (name: string) =>
       ipcRenderer.invoke('plugins:delete-skill', name),
+    onSkillsUpdated: (callback: () => void) => {
+      const listener = () => callback()
+      ipcRenderer.on('skills:updated', listener)
+      return () => {
+        ipcRenderer.removeListener('skills:updated', listener)
+      }
+    },
   },
   dialog: {
     openFolder: () =>
       ipcRenderer.invoke('dialog:open-folder'),
     openFiles: () =>
       ipcRenderer.invoke('dialog:open-files'),
+    openFilesAsAttachments: (allowedMimeTypes?: string) =>
+      ipcRenderer.invoke('dialog:open-files-as-attachments', allowedMimeTypes),
   },
   shell: {
     showInFolder: (folderPath: string) =>

@@ -111,10 +111,13 @@ interface N8nDeskBridge {
     saveSkill: (skill: { name: string; content: string }) =>
       Promise<{ success: true } | { success: false; error: string }>
     deleteSkill: (name: string) => Promise<{ success: true } | { success: false; error: string }>
+    /** Subscribe to dev-mode skill file changes. Returns an unsubscribe function. */
+    onSkillsUpdated?: (callback: () => void) => () => void
   }
   dialog: {
     openFolder: () => Promise<string | null>
     openFiles: () => Promise<string[] | null>
+    openFilesAsAttachments: (allowedMimeTypes?: string) => Promise<Array<{ data: string; mimeType: string; fileName: string }> | null>
   }
   shell: {
     showInFolder: (folderPath: string) => Promise<void>

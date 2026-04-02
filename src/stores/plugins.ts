@@ -9,7 +9,6 @@ import type {
   LoadedSkill,
   DiscoveredTool,
 } from '@/types/plugin'
-import { DEFAULT_SKILLS } from '@/data/default-skills'
 
 export interface ToolSource {
   type: 'plugin' | 'server'
@@ -55,27 +54,32 @@ export const usePluginsStore = defineStore('plugins', () => {
     standaloneServers.value.filter((s) => s.enabled),
   )
 
-  /** All skills: built-in defaults (with enabled state) + user/plugin skills */
-  const allSkills = computed<LoadedSkill[]>(() => {
-    const builtIn = DEFAULT_SKILLS.map((s) => ({
+  /** All skills loaded from backend (built-in + plugin + user), with disabled state */
+  const allSkills = computed<(LoadedSkill & { _disabled?: boolean })[]>(() =>
+    skills.value.map((s) => ({
       ...s,
-      builtIn: true,
-      _disabled: disabledBuiltInSkills.value.has(s.name),
-    }))
-    return [...builtIn, ...skills.value]
-  })
+      _disabled: s.builtIn ? disabledBuiltInSkills.value.has(s.name) : false,
+    })),
+  )
 
   /** Only enabled skills (for passing to the agent) */
   const enabledSkills = computed<LoadedSkill[]>(() =>
-    allSkills.value.filter((s) => !('_disabled' in s && (s as LoadedSkill & { _disabled: boolean })._disabled)),
+    allSkills.value.filter((s) => !s._disabled),
   )
 
   /** Built-in skills (for the Settings UI "Default Skills" group) */
   const builtInSkills = computed(() =>
-    DEFAULT_SKILLS.map((s) => ({
-      ...s,
-      enabled: !disabledBuiltInSkills.value.has(s.name),
-    })),
+    skills.value
+      .filter((s) => s.builtIn)
+      .map((s) => ({
+        ...s,
+        enabled: !disabledBuiltInSkills.value.has(s.name),
+      })),
+  )
+
+  /** User-created skills only (excludes built-in, for the Settings UI "Custom" tab) */
+  const userSkills = computed<LoadedSkill[]>(() =>
+    skills.value.filter((s) => !s.builtIn),
   )
 
   const allToolSources = computed<ToolSource[]>(() => {
@@ -390,6 +394,18 @@ export const usePluginsStore = defineStore('plugins', () => {
     skills.value = skills.value.filter((s) => s.name !== name)
   }
 
+  // --- Dev-mode hot reload ---
+
+  /** Subscribe to skills:updated events from electron (dev-mode file watcher). */
+  let unsubSkillsUpdated: (() => void) | null = null
+
+  function listenForSkillUpdates(): void {
+    if (unsubSkillsUpdated) return
+    unsubSkillsUpdated = window.n8nDesk?.plugins.onSkillsUpdated?.(() => {
+      void loadSkills()
+    }) ?? null
+  }
+
   // --- Hydrate all ---
 
   async function hydrate(): Promise<void> {
@@ -402,6 +418,7 @@ export const usePluginsStore = defineStore('plugins', () => {
         loadSkills(),
         hydrateDisabledBuiltInSkills(),
       ])
+      listenForSkillUpdates()
     } finally {
       isLoading.value = false
     }
@@ -430,6 +447,7 @@ export const usePluginsStore = defineStore('plugins', () => {
     allSkills,
     enabledSkills,
     builtInSkills,
+    userSkills,
 
     // Hydrate / reset
     hydrate,

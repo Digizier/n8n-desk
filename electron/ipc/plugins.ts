@@ -1,9 +1,10 @@
-import { ipcMain, shell } from 'electron'
+import { ipcMain, shell, BrowserWindow } from 'electron'
 import fs from 'fs/promises'
+import fsSync from 'fs'
 import path from 'path'
 import os from 'os'
 import { pluginManager } from '../plugin-manager'
-import { loadAllSkills, saveUserSkill, deleteUserSkill } from '../skill-loader'
+import { loadAllSkills, saveUserSkill, deleteUserSkill, getBuiltinSkillsDir } from '../skill-loader'
 import {
   discoverServer,
   registerClient,
@@ -358,6 +359,38 @@ export function registerPluginHandlers(): void {
       return { success: false, error: message }
     }
   })
+
+  // ── Dev-mode skill hot-reload ──
+  // Watch the built-in skills directory for changes and push updates to the renderer.
+  // Only active in dev (non-packaged) mode — production reads bundled resources.
+
+  try {
+    const { app } = require('electron')
+    if (!app.isPackaged) {
+      const builtinDir = getBuiltinSkillsDir()
+      let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+      fsSync.watch(builtinDir, { recursive: true }, (_eventType, filename) => {
+        // Only react to SKILL.md and supporting markdown files
+        if (!filename || (!filename.endsWith('.md') && !filename.endsWith('.MD'))) return
+
+        // Debounce rapid changes (e.g., editor save triggers multiple events)
+        if (debounceTimer) clearTimeout(debounceTimer)
+        debounceTimer = setTimeout(() => {
+          debounceTimer = null
+          const win = BrowserWindow.getAllWindows()[0]
+          if (win) {
+            console.log(`[n8n-desk] Skill file changed: ${filename} — pushing update to renderer`)
+            win.webContents.send('skills:updated')
+          }
+        }, 300)
+      })
+
+      console.log(`[n8n-desk] Dev skill watcher active on: ${builtinDir}`)
+    }
+  } catch {
+    // Electron not available (tests) — skip watcher
+  }
 
   // ── Server OAuth ──
 

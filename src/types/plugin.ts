@@ -96,7 +96,7 @@ export interface LoadedSkill {
   allowedTools?: string[]
   directory: string
   source: 'user' | 'built-in' | string
-  /** True for skills bundled with the app (shipped in src/data/default-skills.ts) */
+  /** True for skills shipped with the app (loaded from skills/plugins/ at build time) */
   builtIn?: boolean
 }
 

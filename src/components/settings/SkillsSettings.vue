@@ -125,12 +125,12 @@ function closeViewer() {
           </ion-button>
         </div>
 
-        <div v-if="pluginsStore.skills.length === 0" :class="$style.empty">
+        <div v-if="pluginsStore.userSkills.length === 0" :class="$style.empty">
           {{ t('plugins.settings.skills.empty') }}
         </div>
         <div v-else :class="$style.grid">
           <SkillCard
-            v-for="skill in pluginsStore.skills"
+            v-for="skill in pluginsStore.userSkills"
             :key="skill.name"
             :skill="skill"
             @edit="handleEdit"

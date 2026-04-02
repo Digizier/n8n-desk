@@ -171,13 +171,55 @@ export const useCoworkSessionsStore = defineStore('cowork-sessions', () => {
     if (!currentInstanceId) return
 
     activeSessionId.value = sessionId
-    messages.value = await localStorageService.readJsonl<SessionMessage>(
+    const rawMessages = await localStorageService.readJsonl<SessionMessage>(
       sessionFilePath(currentInstanceId, sessionId)
     )
     pendingApproval.value = null
     isPanelOpen.value = false
     panelWorkflowId.value = null
     workflowHistory.value.clear()
+
+    // Deduplicate messages from old sessions that had double-write bugs.
+    // Two sources of duplicates:
+    // 1. Tool messages: backend + store both wrote entries for the same toolCallId
+    // 2. Assistant/system messages: backend + store wrote separate copies with different IDs
+    //    but identical or near-identical content
+
+    // Step 1: For tool messages, keep only the last (most complete) entry per toolCallId
+    const toolCallLastIndex = new Map<string, number>()
+    for (let i = 0; i < rawMessages.length; i++) {
+      const msg = rawMessages[i]
+      if (msg.role === 'tool' && msg.meta) {
+        const toolCallId = (msg.meta as Record<string, unknown>).toolCallId as string | undefined
+        if (toolCallId) toolCallLastIndex.set(toolCallId, i)
+      }
+    }
+
+    const deduped: SessionMessage[] = []
+    const seenToolCalls = new Set<string>()
+    for (let i = 0; i < rawMessages.length; i++) {
+      const msg = rawMessages[i]
+
+      if (msg.role === 'tool' && msg.meta) {
+        const toolCallId = (msg.meta as Record<string, unknown>).toolCallId as string | undefined
+        if (toolCallId) {
+          if (toolCallLastIndex.get(toolCallId) !== i) continue
+          if (seenToolCalls.has(toolCallId)) continue
+          seenToolCalls.add(toolCallId)
+        }
+      } else if (msg.role === 'assistant' || msg.role === 'system') {
+        const prev = deduped[deduped.length - 1]
+        if (prev && prev.role === msg.role && prev.content === msg.content) continue
+        if (prev && prev.role === msg.role && prev.content.includes(msg.content)) continue
+        if (prev && prev.role === msg.role && msg.content.includes(prev.content)) {
+          deduped[deduped.length - 1] = msg
+          continue
+        }
+      }
+
+      deduped.push(msg)
+    }
+    messages.value = deduped
 
     // Reconstruct toolCalls from loaded tool messages so cards render properly
     const reconstructed: AgentToolCall[] = []
@@ -205,10 +247,8 @@ export const useCoworkSessionsStore = defineStore('cowork-sessions', () => {
         tc.status = 'failed'
       }
 
-      // Check if this toolCall already exists (tool_call_start + tool_call_result produce 2 messages)
       const existing = reconstructed.find((t) => t.id === toolCallId)
       if (existing) {
-        // Update with result data
         if (msg.content) existing.result = msg.content
         if (status) existing.status = tc.status
         if (meta.error) existing.status = 'failed'
@@ -320,7 +360,8 @@ export const useCoworkSessionsStore = defineStore('cowork-sessions', () => {
         break
       }
       case 'text_chunk': {
-        // Accumulate text into the last assistant message, or create one
+        // Accumulate text into the last assistant message, or create one.
+        // Do NOT persist here — the complete message is persisted on 'done'.
         const last = messages.value[messages.value.length - 1]
         if (last && last.role === 'assistant') {
           last.content += event.data.text
@@ -332,8 +373,6 @@ export const useCoworkSessionsStore = defineStore('cowork-sessions', () => {
             ts: new Date().toISOString(),
           }
           messages.value.push(msg)
-          // Persist new assistant message immediately
-          persistMessage(msg)
         }
         break
       }
@@ -346,7 +385,8 @@ export const useCoworkSessionsStore = defineStore('cowork-sessions', () => {
         }
         toolCalls.value.push(tc)
 
-        // Add a tool message to the conversation and persist
+        // Add a tool message to the conversation (in-memory only).
+        // Persistence happens on tool_call_result with the final state.
         const toolMsg: SessionMessage = {
           id: `msg_${Date.now()}`,
           role: 'tool',
@@ -355,7 +395,6 @@ export const useCoworkSessionsStore = defineStore('cowork-sessions', () => {
           meta: { toolCallId: event.data.id, toolName: event.data.name, status: 'running' },
         }
         messages.value.push(toolMsg)
-        persistMessage(toolMsg)
         break
       }
       case 'tool_call_result': {
@@ -365,7 +404,7 @@ export const useCoworkSessionsStore = defineStore('cowork-sessions', () => {
           tc.result = event.data.result
         }
 
-        // Update the tool message and persist the updated version
+        // Update the tool message in-memory and persist the final version
         const toolMsg = [...messages.value].reverse().find(
           (m) => m.meta && (m.meta as Record<string, unknown>).toolCallId === event.data.id
         )
@@ -404,12 +443,24 @@ export const useCoworkSessionsStore = defineStore('cowork-sessions', () => {
         const newData: WorkflowPreviewData = {
           workflowId: wfId,
           name: event.data.name,
-          workflow: event.data.workflow,
+          workflow: event.data.workflow as WorkflowJson,
           workflowBefore: previousVersion,
         }
         // Store this version as the latest for future diffs
         if (wfId) {
-          workflowHistory.value.set(wfId, structuredClone(event.data.workflow))
+          workflowHistory.value.set(wfId, structuredClone(event.data.workflow) as WorkflowJson)
+        }
+        // Inject the full workflow JSON into the matching tool call's result
+        // so the chat panel's extractWorkflowFromToolResult can find it.
+        if (event.data.toolCallId) {
+          const tc = toolCalls.value.find((t) => t.id === event.data.toolCallId)
+          if (tc) {
+            tc.result = {
+              id: wfId,
+              name: event.data.name,
+              workflow: event.data.workflow,
+            }
+          }
         }
         // If panel is open, update it live; otherwise inline cards handle display
         if (isPanelOpen.value) {

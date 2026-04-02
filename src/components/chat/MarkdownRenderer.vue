@@ -75,5 +75,41 @@ const renderedHtml = computed(() => renderMarkdown(props.content))
     border-left: 3px solid var(--color--foreground--shade-3);
     color: var(--color--text--light);
   }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 13px;
+    border: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground--shade-3));
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  thead {
+    background: var(--n8n-desk--surface-bg, var(--color--foreground));
+  }
+
+  th {
+    text-align: left;
+    font-weight: 600;
+    padding: 8px 12px;
+    color: var(--color--text--shade-1);
+    border-bottom: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground--shade-3));
+  }
+
+  td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground--shade-3));
+    color: var(--color--text);
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  tbody tr:hover {
+    background: var(--n8n-desk--surface-bg, var(--color--foreground));
+  }
 }
 </style>

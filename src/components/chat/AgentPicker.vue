@@ -153,8 +153,8 @@ function close() {
   emit('update:isOpen', false)
 }
 
-function getInitial(name: string): string {
-  return name.charAt(0).toUpperCase()
+function getInitial(name: string | undefined): string {
+  return name ? name.charAt(0).toUpperCase() : '?'
 }
 </script>
 
@@ -201,7 +201,7 @@ function getInitial(name: string): string {
         <ion-list lines="none" :class="$style.agentList">
           <ion-item
             v-for="agent in group.agents"
-            :key="agent.name + agent.model.provider"
+            :key="(agent.id || agent.name || '') + agent.model.provider"
             button
             :disabled="!agent.metadata.available"
             :class="[
@@ -216,7 +216,7 @@ function getInitial(name: string): string {
               <span v-else>{{ getInitial(agent.name) }}</span>
             </div>
             <ion-label>
-              <h3 :class="$style.agentName">{{ agent.name }}</h3>
+              <h3 :class="$style.agentName">{{ agent.name || agent.id || 'Unknown' }}</h3>
               <p v-if="agent.description" :class="$style.agentDescription">
                 {{ agent.description }}
               </p>

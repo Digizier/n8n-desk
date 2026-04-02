@@ -14,6 +14,8 @@ interface LoadedSkill {
   allowedTools?: string[]
   directory: string
   source: 'user' | 'built-in' | string
+  /** True for skills shipped with the app (loaded from skills/plugins/) */
+  builtIn?: boolean
 }
 
 /** Raw SKILL.md frontmatter fields (kebab-case as written in YAML) */
@@ -40,7 +42,7 @@ const PLUGINS_CACHE_DIR = path.join(BASE_DIR, 'plugins', 'cache')
  * Uses a lazy import of `electron` so this module can also be used
  * in test environments where Electron is not available.
  */
-function getBuiltinSkillsDir(): string {
+export function getBuiltinSkillsDir(): string {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { app } = require('electron')
@@ -51,8 +53,8 @@ function getBuiltinSkillsDir(): string {
   } catch {
     // Electron not available (e.g., tests) — fall through to dev path
   }
-  // Dev: resolve from this file's location → electron/ → project root → skills/plugins
-  return path.join(__dirname, '..', 'skills', 'plugins')
+  // Dev: __dirname is electron/dist/ after esbuild bundling → go up two levels to project root
+  return path.join(__dirname, '..', '..', 'skills', 'plugins')
 }
 
 // --- SKILL.md Parsing ---
@@ -193,6 +195,7 @@ export async function loadAllSkills(): Promise<LoadedSkill[]> {
   const builtinDir = getBuiltinSkillsDir()
   const builtinSkills = await scanSkillDirectory(builtinDir, 'built-in')
   for (const skill of builtinSkills) {
+    skill.builtIn = true
     skillsByName.set(skill.name, skill)
   }
 

@@ -691,12 +691,12 @@ function openCreateSkill() {
             </ion-button>
           </div>
 
-          <div v-if="pluginsStore.skills.length === 0" :class="$style.emptyState">
+          <div v-if="pluginsStore.userSkills.length === 0" :class="$style.emptyState">
             {{ t('plugins.settings.skills.empty') }}
           </div>
           <div v-else :class="$style.cardGrid">
             <SkillCard
-              v-for="skill in pluginsStore.skills"
+              v-for="skill in pluginsStore.userSkills"
               :key="skill.name"
               :skill="skill"
               @edit="handleSkillEdit"

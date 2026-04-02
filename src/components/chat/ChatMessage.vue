@@ -181,8 +181,7 @@ async function copyMessage(): Promise<void> {
 .message {
   display: flex;
   flex-direction: column;
-  max-width: 85%;
-  margin-bottom: var(--spacing--xs);
+  max-width: 90%;
 
   &:hover .actions {
     opacity: 1;
@@ -205,29 +204,158 @@ async function copyMessage(): Promise<void> {
 }
 
 .bubble {
-  padding: var(--spacing--xs) var(--spacing--sm);
-  border-radius: var(--radius--md);
   line-height: 1.5;
-  font-size: var(--font-size--s);
+  font-size: 14px;
 
   .user & {
-    background: var(--color--primary);
-    color: var(--color--primary--text, #fff);
-    border-bottom-right-radius: var(--radius--xs);
+    max-width: 80%;
+    padding: 10px 14px;
+    border-radius: 16px 16px 4px 16px;
+    background: var(--color--primary, #ff6d5a);
+    color: #fff;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   .assistant & {
-    background: var(--n8n-desk--surface-bg);
-    color: var(--color--text);
-    border-bottom-left-radius: var(--radius--xs);
+    max-width: 90%;
+    position: relative;
+    color: var(--color--text--shade-1);
   }
 }
 
+// Markdown styles matching Cowork/Workflow
+.bubble {
+  :deep(p) {
+    margin: 0 0 8px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  :deep(ul),
+  :deep(ol) {
+    margin: 4px 0 8px;
+    padding-left: 20px;
+
+    li {
+      margin-bottom: 2px;
+    }
+  }
+
+  :deep(strong) {
+    font-weight: 600;
+    color: var(--color--text--shade-1);
+  }
+
+  :deep(a) {
+    color: var(--color--primary);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  :deep(code) {
+    font-size: 12px;
+    font-family: 'SFMono-Regular', 'Consolas', 'Liberation Mono', 'Menlo', monospace;
+    background: var(--n8n-desk--surface-bg, var(--color--foreground));
+    color: var(--color--text);
+    padding: 2px 5px;
+    border-radius: 4px;
+  }
+
+  :deep(pre) {
+    background: var(--n8n-desk--surface-bg, var(--color--foreground));
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 8px 0;
+    border: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+
+    code {
+      background: none;
+      padding: 0;
+      border-radius: 0;
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--color--text);
+    }
+  }
+
+  :deep(blockquote) {
+    margin: 8px 0;
+    padding: 4px 12px;
+    border-left: 3px solid var(--color--text--tint-1);
+    color: var(--color--text);
+  }
+
+  :deep(hr) {
+    border: none;
+    border-top: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground));
+    margin: 12px 0;
+  }
+
+  :deep(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 13px;
+    border: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground--shade-3));
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  :deep(thead) {
+    background: var(--n8n-desk--surface-bg, var(--color--foreground));
+  }
+
+  :deep(th) {
+    text-align: left;
+    font-weight: 600;
+    padding: 8px 12px;
+    color: var(--color--text--shade-1);
+    border-bottom: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground--shade-3));
+  }
+
+  :deep(td) {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--n8n-desk--surface-raised-bg, var(--color--foreground--shade-3));
+    color: var(--color--text);
+  }
+
+  :deep(tr:last-child td) {
+    border-bottom: none;
+  }
+
+  :deep(tbody tr:hover) {
+    background: var(--n8n-desk--surface-bg, var(--color--foreground));
+  }
+
+  :deep(h1),
+  :deep(h2),
+  :deep(h3),
+  :deep(h4) {
+    color: var(--color--text--shade-1);
+    margin: 12px 0 6px;
+    font-weight: 600;
+
+    &:first-child { margin-top: 0; }
+  }
+
+  :deep(h1) { font-size: 18px; }
+  :deep(h2) { font-size: 16px; }
+  :deep(h3) { font-size: 15px; }
+  :deep(h4) { font-size: 14px; }
+}
+
 .systemBubble {
-  padding: var(--spacing--3xs) var(--spacing--xs);
-  font-size: var(--font-size--2xs);
-  color: var(--color--text--light);
-  font-style: italic;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color--text--tint-1);
+  padding: 4px 0;
 }
 
 .textContent {
@@ -237,40 +365,40 @@ async function copyMessage(): Promise<void> {
 }
 
 .artifactPlaceholder {
-  margin: var(--spacing--xs) 0;
-  padding: var(--spacing--xs);
+  margin: 8px 0;
+  padding: 8px;
   background: var(--n8n-desk--surface-raised-bg);
-  border-radius: var(--radius--sm);
+  border-radius: 8px;
   border: 1px solid var(--color--foreground--shade-3);
 }
 
 .artifactLabel {
-  font-weight: var(--font-weight--semi-bold);
-  font-size: var(--font-size--2xs);
+  font-weight: 600;
+  font-size: 12px;
 }
 
 .artifactLoading {
-  font-size: var(--font-size--3xs);
-  color: var(--color--text--light);
-  margin-top: var(--spacing--4xs);
+  font-size: 11px;
+  color: var(--color--text--tint-1);
+  margin-top: 4px;
 }
 
 .buttonChunk {
-  margin-top: var(--spacing--xs);
+  margin-top: 8px;
 }
 
 .buttons {
   display: flex;
-  gap: var(--spacing--xs);
-  margin-top: var(--spacing--xs);
+  gap: 8px;
+  margin-top: 8px;
   flex-wrap: wrap;
 }
 
 .button {
   display: inline-block;
-  padding: var(--spacing--3xs) var(--spacing--xs);
-  border-radius: var(--radius--sm);
-  font-size: var(--font-size--2xs);
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 12px;
   text-decoration: none;
   color: var(--color--text);
   background: var(--n8n-desk--surface-raised-bg);
@@ -284,7 +412,7 @@ async function copyMessage(): Promise<void> {
 
 .buttonPrimary {
   background: var(--color--primary);
-  color: var(--color--primary--text, #fff);
+  color: #fff;
   border-color: var(--color--primary);
 
   &:hover {
@@ -293,25 +421,25 @@ async function copyMessage(): Promise<void> {
 }
 
 .errorBanner {
-  margin-top: var(--spacing--xs);
+  margin-top: 8px;
 }
 
 .meta {
   display: flex;
   align-items: center;
-  gap: var(--spacing--3xs);
-  margin-top: var(--spacing--4xs);
+  gap: 4px;
+  margin-top: 2px;
   min-height: 20px;
 }
 
 .timestamp {
-  font-size: var(--font-size--3xs);
-  color: var(--color--text--light);
+  font-size: 11px;
+  color: var(--color--text--tint-1);
 }
 
 .actions {
   display: flex;
-  gap: var(--spacing--4xs);
+  gap: 2px;
   opacity: 0;
   transition: opacity 0.15s ease;
 }
@@ -324,16 +452,16 @@ async function copyMessage(): Promise<void> {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: var(--font-size--xs);
-  color: var(--color--text--light);
+  font-size: 13px;
+  color: var(--color--text--tint-1);
   padding: 2px 4px;
-  border-radius: var(--radius--xs);
+  border-radius: 4px;
   line-height: 1;
   display: inline-flex;
   align-items: center;
 
   &:hover {
-    color: var(--color--text);
+    color: var(--color--text--shade-1);
     background: var(--n8n-desk--surface-raised-bg);
   }
 }

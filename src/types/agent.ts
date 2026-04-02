@@ -52,6 +52,7 @@ export interface AgentDoneEvent extends AgentEventBase {
 export interface AgentWorkflowPreviewEvent extends AgentEventBase {
   type: 'workflow_preview'
   data: {
+    toolCallId: string
     workflowId: string
     name: string
     workflow: WorkflowJson

@@ -52,6 +52,7 @@ export interface AgentStreamDone extends AgentStreamEventBase {
 export interface AgentStreamWorkflowPreview extends AgentStreamEventBase {
   type: 'workflow_preview'
   data: {
+    toolCallId: string
     workflowId: string
     name: string
     workflow: Record<string, unknown>

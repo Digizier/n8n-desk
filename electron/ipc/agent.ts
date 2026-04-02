@@ -12,6 +12,7 @@ import { buildCoworkPolicy, buildWorkflowPolicy } from '../agent/sandbox-policy'
 import { createFileTools } from '../agent/file-tools'
 import { jsComputeTool } from '../agent/js-sandbox'
 import { WORKFLOW_MODE_SYSTEM_PROMPT, COWORK_MODE_SYSTEM_PROMPT } from '../agent/system-prompts'
+import { callTool } from '../mcp-client'
 
 const BASE_DIR = path.join(os.homedir(), '.n8n-desk')
 
@@ -226,6 +227,116 @@ function extractWorkflowFromResult(result: unknown): { workflowId: string; name:
   return null
 }
 
+/** Tools whose results contain workflow metadata (workflowId) but NOT full workflow JSON. */
+const WORKFLOW_METADATA_TOOLS = [
+  'create_workflow_from_code',
+  'update_workflow',
+]
+
+/**
+ * Check if a tool name matches one of the workflow metadata tools.
+ * Handles both bare names ('create_workflow_from_code') and MCP-namespaced
+ * names ('mcp__n8n__create_workflow_from_code') from the Claude Agent SDK.
+ */
+function isWorkflowMetadataTool(toolName: string): boolean {
+  return WORKFLOW_METADATA_TOOLS.some((t) => toolName === t || toolName.endsWith(`__${t}`))
+}
+
+/**
+ * Extract workflowId and name from an MCP tool result that contains only metadata.
+ * Works for create_workflow_from_code / update_workflow which return
+ * { content: "...", structuredContent: { workflowId, name, ... } }.
+ */
+function extractWorkflowMetadata(result: unknown): { workflowId: string; name: string } | null {
+  if (!result || typeof result !== 'object') {
+    if (typeof result === 'string') {
+      try { return extractWorkflowMetadata(JSON.parse(result)) } catch { return null }
+    }
+    return null
+  }
+
+  // MCP content block array: [{ type: "text", text: "..." }]
+  if (Array.isArray(result)) {
+    for (const block of result) {
+      if (block && typeof block === 'object' && (block as Record<string, unknown>).type === 'text') {
+        const extracted = extractWorkflowMetadata((block as Record<string, unknown>).text)
+        if (extracted) return extracted
+      }
+    }
+    return null
+  }
+
+  const r = result as Record<string, unknown>
+
+  // Direct: { workflowId: "...", name: "..." }
+  if (typeof r.workflowId === 'string' && r.workflowId) {
+    return { workflowId: r.workflowId, name: (r.name as string) ?? 'Workflow' }
+  }
+
+  // Nested: { structuredContent: { workflowId: "...", name: "..." } }
+  if (typeof r.structuredContent === 'object' && r.structuredContent !== null) {
+    return extractWorkflowMetadata(r.structuredContent)
+  }
+
+  // Content string: { content: "stringified JSON" }
+  if (typeof r.content === 'string') {
+    try { return extractWorkflowMetadata(JSON.parse(r.content)) } catch { /* not JSON */ }
+  }
+
+  return null
+}
+
+/**
+ * Fetch full workflow JSON via the n8n MCP server's get_workflow_details tool.
+ * Uses the MCP OAuth token (same auth as the agent), so it works regardless
+ * of whether a session cookie exists.
+ */
+async function fetchWorkflowViaMcp(
+  instanceUrl: string,
+  accessToken: string,
+  workflowId: string,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const result = await callTool(instanceUrl, accessToken, 'get_workflow_details', { workflowId })
+
+    // MCP result: { content: [{ type: "text", text: "..." }] }
+    if (result.isError) {
+      console.warn(`[n8n-desk] MCP get_workflow_details returned error for ${workflowId}`)
+      return null
+    }
+
+    // Extract the text content and parse it
+    for (const block of result.content) {
+      if (block.type === 'text' && block.text) {
+        try {
+          const parsed = JSON.parse(block.text) as Record<string, unknown>
+          // The response may contain the workflow directly or nested
+          if (Array.isArray(parsed.nodes) && parsed.connections) {
+            return parsed
+          }
+          // Or wrapped in a workflow key
+          if (typeof parsed.workflow === 'object' && parsed.workflow !== null) {
+            const w = parsed.workflow as Record<string, unknown>
+            if (Array.isArray(w.nodes)) return w
+          }
+          // Some responses have the full workflow at top level with id/name/nodes
+          if (parsed.id && parsed.name && Array.isArray(parsed.nodes)) {
+            return parsed
+          }
+        } catch {
+          // Not JSON — skip this block
+        }
+      }
+    }
+
+    console.warn(`[n8n-desk] Could not extract workflow JSON from MCP response for ${workflowId}`)
+    return null
+  } catch (err) {
+    console.warn('[n8n-desk] Error fetching workflow via MCP:', err)
+    return null
+  }
+}
+
 /**
  * Read session JSONL and build conversation history for multi-turn memory.
  * Returns messages in chronological order, combining text chunks into
@@ -277,113 +388,9 @@ async function loadConversationHistory(
   }
 }
 
-/** Accumulates text chunks per session so we can flush a complete assistant message */
-const sessionTextAccumulator = new Map<string, string>()
-
-/** Flush the accumulated assistant text to JSONL and clear the buffer */
-async function flushAssistantMessage(sessionId: string, mode: 'workflow' | 'cowork' = 'workflow'): Promise<void> {
-  const text = sessionTextAccumulator.get(sessionId)
-  sessionTextAccumulator.delete(sessionId)
-  if (!text?.trim()) return
-
-  const config = await readJson<{ defaultInstanceId?: string }>(path.join(BASE_DIR, 'config.json'))
-  if (!config?.defaultInstanceId) return
-
-  const jsonlPath = path.join(
-    BASE_DIR,
-    'instances',
-    config.defaultInstanceId,
-    'sessions',
-    mode,
-    `${sessionId}.jsonl`,
-  )
-
-  const message = {
-    id: `msg_${Date.now()}`,
-    role: 'assistant',
-    content: text,
-    ts: new Date().toISOString(),
-  }
-
-  try {
-    await fs.mkdir(path.dirname(jsonlPath), { recursive: true })
-    await fs.appendFile(jsonlPath, JSON.stringify(message) + '\n', 'utf-8')
-  } catch { /* non-fatal */ }
-}
-
-async function appendToSessionJsonl(sessionId: string, event: AgentStreamEvent, mode: 'workflow' | 'cowork' = 'workflow'): Promise<void> {
-  // Find the active instance to determine the JSONL path
-  const config = await readJson<{ defaultInstanceId?: string }>(path.join(BASE_DIR, 'config.json'))
-  if (!config?.defaultInstanceId) return
-
-  const jsonlPath = path.join(
-    BASE_DIR,
-    'instances',
-    config.defaultInstanceId,
-    'sessions',
-    mode,
-    `${sessionId}.jsonl`
-  )
-
-  // Only persist message-producing events
-  let message: Record<string, unknown> | null = null
-
-  switch (event.type) {
-    case 'text_chunk': {
-      // Accumulate text chunks — flushed as a complete assistant message on 'done'
-      const prev = sessionTextAccumulator.get(sessionId) ?? ''
-      sessionTextAccumulator.set(sessionId, prev + event.data.text)
-      break
-    }
-    case 'done':
-      // Flush accumulated assistant text before the session ends
-      await flushAssistantMessage(sessionId, mode)
-      break
-    case 'tool_call_start':
-      // Flush any accumulated assistant text before the tool call
-      await flushAssistantMessage(sessionId, mode)
-      message = {
-        id: `msg_${Date.now()}`,
-        role: 'tool',
-        content: '',
-        ts: new Date().toISOString(),
-        meta: { toolCallId: event.data.id, toolName: event.data.name, status: 'running' },
-      }
-      break
-    case 'tool_call_result':
-      message = {
-        id: `msg_${Date.now()}`,
-        role: 'tool',
-        content: typeof event.data.result === 'string' ? event.data.result : JSON.stringify(event.data.result),
-        ts: new Date().toISOString(),
-        meta: {
-          toolCallId: event.data.id,
-          toolName: event.data.name,
-          status: event.data.success ? 'completed' : 'failed',
-          error: event.data.error,
-        },
-      }
-      break
-    case 'error':
-      message = {
-        id: `msg_${Date.now()}`,
-        role: 'system',
-        content: event.data.message,
-        ts: new Date().toISOString(),
-        meta: { error: true, code: event.data.code },
-      }
-      break
-  }
-
-  if (message) {
-    try {
-      await fs.mkdir(path.dirname(jsonlPath), { recursive: true })
-      await fs.appendFile(jsonlPath, JSON.stringify(message) + '\n', 'utf-8')
-    } catch {
-      // Non-fatal — session file may not exist yet
-    }
-  }
-}
+// NOTE: Session JSONL persistence is handled entirely by the renderer's Pinia
+// store (workflow-sessions / cowork-sessions). The backend does NOT write to
+// JSONL to avoid duplicate messages.
 
 async function testLlmConnection(config: LlmProviderConfig): Promise<{ success: boolean; error?: string }> {
   const provider = config.provider
@@ -631,18 +638,53 @@ export function registerAgentHandlers(mainWindow: BrowserWindow): void {
           for await (const event of runner.invoke(sessionId, message, runnerConfig)) {
             if (active.stopped) break
             mainWindow.webContents.send('agent:event', event)
-            await appendToSessionJsonl(sessionId, event, mode)
+            // NOTE: Session messages are persisted by the renderer's Pinia store
+            // (via persistMessage). Do NOT also persist here — that causes duplicates.
 
             // Auto-emit workflow preview when a tool result contains workflow JSON
             if (event.type === 'tool_call_result' && event.data.success) {
+              console.log(`[n8n-desk] tool_call_result: name=${event.data.name}, id=${event.data.id}`)
+
+              // First: try to extract full workflow JSON directly from the result
               const extracted = extractWorkflowFromResult(event.data.result)
               if (extracted) {
+                console.log(`[n8n-desk] Extracted workflow directly: ${extracted.workflowId}`)
                 const previewEvent: AgentStreamEvent = {
                   type: 'workflow_preview',
                   sessionId,
-                  data: extracted,
+                  data: { ...extracted, toolCallId: event.data.id },
                 }
                 mainWindow.webContents.send('agent:event', previewEvent)
+              } else {
+                // No full workflow in result — check if it contains workflow metadata
+                // (workflowId). This handles create_workflow_from_code and update_workflow
+                // which return only metadata. We also try this as a fallback regardless
+                // of tool name, since the Claude SDK may not always provide the name.
+                const meta = extractWorkflowMetadata(event.data.result)
+                if (meta) {
+                  console.log(`[n8n-desk] Found workflow metadata in tool result (tool=${event.data.name}): workflowId=${meta.workflowId}`)
+                  void fetchWorkflowViaMcp(
+                    instanceConfig.url,
+                    instanceConfig.accessToken,
+                    meta.workflowId,
+                  ).then((workflow) => {
+                    if (!workflow || active.stopped) return
+                    console.log(`[n8n-desk] Fetched workflow ${meta.workflowId} for preview (${Array.isArray((workflow as Record<string, unknown>).nodes) ? ((workflow as Record<string, unknown>).nodes as unknown[]).length : '?'} nodes)`)
+                    const previewEvent: AgentStreamEvent = {
+                      type: 'workflow_preview',
+                      sessionId,
+                      data: {
+                        toolCallId: event.data.id,
+                        workflowId: meta.workflowId,
+                        name: meta.name,
+                        workflow,
+                      },
+                    }
+                    mainWindow.webContents.send('agent:event', previewEvent)
+                  }).catch((err) => {
+                    console.error(`[n8n-desk] Failed to fetch workflow for preview:`, err)
+                  })
+                }
               }
             }
           }
