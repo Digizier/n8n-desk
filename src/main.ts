@@ -9,6 +9,7 @@ import { useAuthStore } from './stores/auth'
 import { useTheme } from './composables/useTheme'
 import { useChatStore } from './stores/chat'
 import { useWorkflowSessionsStore } from './stores/workflow-sessions'
+import { useCoworkSessionsStore } from './stores/cowork-sessions'
 import { n8nHtml } from './directives/n8n-html'
 import { i18n } from './i18n'
 
@@ -50,6 +51,10 @@ async function bootstrap() {
     // 5. Hydrate workflow sessions store for the active instance
     const workflowSessionsStore = useWorkflowSessionsStore()
     await workflowSessionsStore.hydrate(instancesStore.activeInstanceId)
+
+    // 6. Hydrate cowork sessions store for the active instance
+    const coworkSessionsStore = useCoworkSessionsStore()
+    await coworkSessionsStore.hydrate(instancesStore.activeInstanceId)
   }
 
   // Mark Electron for CSS safe area handling (macOS traffic lights)
