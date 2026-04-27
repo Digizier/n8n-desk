@@ -1,7 +1,3 @@
-<p align="center">
-  <img src=".github/assets/logo.svg" width="96" alt="n8n-desk logo" />
-</p>
-
 <h1 align="center">n8n-desk</h1>
 
 <p align="center"><strong>Bringing n8n to your Machine</strong></p>
@@ -259,10 +255,6 @@ n8n's open platform and available APIs.
 ---
 
 ## Built by
-
-<p align="center">
-  <img src=".github/assets/geckse.jpg" width="80" alt="Marcel Claus-Ahrens" style="border-radius: 50%;" />
-</p>
 
 <p align="center">
   Built by <strong>Marcel "geckse" Claus-Ahrens</strong><br/>
