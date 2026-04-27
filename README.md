@@ -190,10 +190,14 @@ its agents structured access to your n8n instance. Both built-in agent runtimes 
 the **Claude Agent SDK** and the **Deep Agents SDK** — connect to the same MCP
 servers, so the capabilities stay identical no matter which one you pick.
 
-| MCP Server | Claude Agent SDK | Deep Agents SDK |
-|---|:---:|:---:|
-| **Official n8n MCP** — built into n8n. Exposes the workflow lifecycle: search, build, validate, create, execute, publish, archive. | yes | yes |
-| **Community n8n MCP** ([czlonkowski/n8n-mcp](https://github.com/czlonkowski/n8n-mcp)) — richer node discovery, schema lookups, validation. | planned | planned |
+| Official n8n MCP | Community n8n MCP | Claude Agent SDK | Deep Agents SDK |
+|:---:|:---:|:---:|:---:|
+| x | soon | x | soon |
+
+Both runtimes are fully on par — same tools, same behavior, your choice of model.
+
+- **Official n8n MCP** — built into n8n. Workflow lifecycle: search, build, validate, create, execute, publish, archive.
+- **Community n8n MCP** — [czlonkowski/n8n-mcp](https://github.com/czlonkowski/n8n-mcp) · richer node discovery, schema lookups, validation.
 
 Internally, the Claude runner exposes tools via a local MCP bridge; the Deep Agents
 runner wraps the same tools as LangChain tools directly. Same behavior, two
