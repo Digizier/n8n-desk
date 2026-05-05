@@ -43,7 +43,6 @@ type McpServerInstance = any
  */
 export class LocalMcpServer {
   private httpServer: http.Server | null = null
-  private mcpServer: McpServerInstance = null
   private port = 0
 
   constructor(
@@ -67,32 +66,36 @@ export class LocalMcpServer {
       '@modelcontextprotocol/sdk/server/streamableHttp.js'
     )
 
-    this.mcpServer = new McpServer(
-      { name: 'n8n-desk-local', version: '1.0.0' },
-      { capabilities: { tools: {} } },
-    )
-
-    // Register all 13 file tools + js_compute as MCP tools
-    this.registerTools()
-
-    // Create HTTP server that delegates to the MCP transport.
-    // Stateless mode: each request gets a fresh transport. The McpServer
-    // persists tool registrations and initialization state across transports.
-    const mcpRef = this.mcpServer
+    // Stateless mode (canonical pattern from MCP SDK examples): build a
+    // fresh McpServer + transport per HTTP request.
+    //
+    // We can't reuse one McpServer across requests because Protocol.connect()
+    // throws "Already connected to a transport" if a transport is already
+    // attached. Re-registering tools per request is cheap (no I/O) so the
+    // overhead is negligible compared to the actual tool execution.
     this.httpServer = http.createServer(async (req, res) => {
+      let perRequestServer: McpServerInstance = null
       try {
-        // Stateless: create a new transport per request. The McpServer
-        // retains its tool registrations across connect() calls — only
-        // the I/O channel is swapped.
+        perRequestServer = new McpServer(
+          { name: 'n8n-desk-local', version: '1.0.0' },
+          { capabilities: { tools: {} } },
+        )
+        this.registerToolsOn(perRequestServer)
+
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
         })
         res.on('close', () => {
           transport.close().catch(() => {})
+          perRequestServer?.close().catch(() => {})
         })
-        await mcpRef.connect(transport)
+        await perRequestServer.connect(transport)
         await transport.handleRequest(req, res)
       } catch {
+        // Best-effort cleanup of the per-request server on error
+        if (perRequestServer) {
+          await perRequestServer.close().catch(() => {})
+        }
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: 'Internal server error' }))
@@ -118,17 +121,7 @@ export class LocalMcpServer {
    * Safe to call multiple times — subsequent calls are no-ops.
    */
   async stop(): Promise<void> {
-    // Close the MCP server first (closes the active transport)
-    if (this.mcpServer) {
-      try {
-        await this.mcpServer.close()
-      } catch {
-        // Best-effort cleanup
-      }
-      this.mcpServer = null
-    }
-
-    // Close the HTTP server
+    // Close the HTTP server (per-request McpServers self-clean on res close)
     if (this.httpServer) {
       await new Promise<void>((resolve) => {
         this.httpServer!.close(() => resolve())
@@ -140,7 +133,7 @@ export class LocalMcpServer {
   }
 
   /**
-   * Register LangChain file tools + js_compute as MCP tools on the server.
+   * Register LangChain file tools + js_compute on a per-request McpServer.
    *
    * Wraps each LangChain tool: extracts name, description, and Zod schema
    * shape, then registers an MCP handler that calls lcTool.invoke() and
@@ -149,7 +142,7 @@ export class LocalMcpServer {
    * Error handling: tool invocation errors are returned as isError responses
    * (not thrown) so the agent can recover gracefully.
    */
-  private registerTools(): void {
+  private registerToolsOn(server: McpServerInstance): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fileTools: any[] = createFileTools(this.policy)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -188,29 +181,29 @@ export class LocalMcpServer {
 
       // Register with Zod schema shape if available (all our tools have schemas)
       if (zodShape) {
-        this.mcpServer.tool(name, description, zodShape, handler)
+        server.tool(name, description, zodShape, handler)
       } else {
-        this.mcpServer.tool(name, description, handler)
+        server.tool(name, description, handler)
       }
     }
 
     // Register skill tools when skills are configured
-    this.registerSkillTools()
+    this.registerSkillToolsOn(server)
   }
 
   /**
-   * Register invoke_skill and read_skill_file as MCP tools.
+   * Register invoke_skill and read_skill_file on a per-request McpServer.
    * These mirror the LangChain tools in DeepAgentsRunner, keeping both
    * agent backends in sync (per CLAUDE.md: both backends must stay in sync).
    */
-  private registerSkillTools(): void {
+  private registerSkillToolsOn(server: McpServerInstance): void {
     if (this.skills.length === 0) return
 
     const { z } = require('zod')
     const skills = this.skills
 
     // invoke_skill — load skill content by name
-    this.mcpServer.tool(
+    server.tool(
       'invoke_skill',
       'Load a skill by name. Returns the full instructions with arguments substituted. If the content references additional files (e.g., [PATTERNS.md](PATTERNS.md)), use read_skill_file to load them.',
       {
@@ -235,7 +228,7 @@ export class LocalMcpServer {
     )
 
     // read_skill_file — read supporting files from a skill directory
-    this.mcpServer.tool(
+    server.tool(
       'read_skill_file',
       'Read a supporting file referenced by a skill (e.g., PATTERNS.md, SDK-API.md). Use when invoke_skill returns content that references additional files.',
       {
