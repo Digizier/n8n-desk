@@ -201,7 +201,7 @@ function getInitial(name: string | undefined): string {
         <ion-list lines="none" :class="$style.agentList">
           <ion-item
             v-for="agent in group.agents"
-            :key="(agent.id || agent.name || '') + agent.model.provider"
+            :key="(agent.name || '') + agent.model.provider"
             button
             :disabled="!agent.metadata.available"
             :class="[
@@ -216,7 +216,7 @@ function getInitial(name: string | undefined): string {
               <span v-else>{{ getInitial(agent.name) }}</span>
             </div>
             <ion-label>
-              <h3 :class="$style.agentName">{{ agent.name || agent.id || 'Unknown' }}</h3>
+              <h3 :class="$style.agentName">{{ agent.name || 'Unknown' }}</h3>
               <p v-if="agent.description" :class="$style.agentDescription">
                 {{ agent.description }}
               </p>
