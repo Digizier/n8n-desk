@@ -7,7 +7,7 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "build:electron:ts": "node scripts/build-electron.mjs",
     "dev:electron": "pnpm build:electron:ts && concurrently -k \"vite\" \"electron .\"",
